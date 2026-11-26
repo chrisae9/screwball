@@ -33,9 +33,9 @@ test("foreground push leases follow each window and release on background or clo
   const presence = async (p, active, action) => {
     // A response to an earlier heartbeat can arrive after a visibility change.
     // Identify the newly sent request, then check its own acknowledgement.
-    const report = p.waitForRequest(request => {
-      if (!request.url().endsWith("/api/push/presence")) return false;
-      const data = request.postDataJSON();
+    const report = p.waitForRequest(candidate => {
+      if (!candidate.url().endsWith("/api/push/presence")) return false;
+      const data = candidate.postDataJSON();
       return data ? data.endpoint === endpoint && data.visible === active : !active;
     }, {timeout: 12000});
     if (action) await action();
