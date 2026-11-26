@@ -24,15 +24,18 @@ async function reopenFromBoard(page, path) {
 }
 
 async function typeBeforeChatLoads(page, game, text) {
+  let intercepted = false;
   let release;
   const held = new Promise(resolve => { release = resolve; });
   await page.route("**/public/chat.js*", async route => {
+    intercepted = true;
     await held;
     await route.continue();
   }, {times:1});
   const input = page.getByRole("textbox", {name:"Message"});
   try {
     await page.goto(game + "/chat", {waitUntil:"commit"});
+    await expect.poll(() => intercepted).toBe(true);
     await input.fill(text);
   } finally { release(); }
   await page.waitForLoadState("load");
