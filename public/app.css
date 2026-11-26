@@ -1559,23 +1559,11 @@ section.card + section.card {
   line-height: 1.3;
 }
 .draft-review[data-state="valid"] { border-color: var(--draft-success); }
-.draft-review[data-state="invalid"] { border-color: var(--draft-warning); }
-.draft-verdict, .draft-details {
-  display: flex;
-  align-items: baseline;
-  gap: .4rem;
-}
-.draft-mark { color: var(--muted); font-weight: 750; }
-.draft-review[data-state="valid"] .draft-mark { color: var(--draft-success); }
-.draft-review[data-state="invalid"] .draft-mark, .draft-word.is-invalid { color: var(--draft-warning); }
-.draft-total { margin-inline-start: auto; white-space: nowrap; font-variant-numeric: tabular-nums; }
-.draft-details { justify-content: space-between; flex-wrap: wrap; gap: .1rem .6rem; }
-.draft-reason { margin: .1rem 0 0; }
-.draft-words { display: flex; flex-wrap: wrap; gap: .1rem .5rem; }
-.draft-word { white-space: nowrap; font-weight: 650; }
-.draft-word small, .draft-best, .draft-bonus { font-size: .77rem; }
-.draft-word small, .draft-best { color: var(--muted); }
-.draft-word.is-invalid small { color: inherit; }
+.draft-review[data-state="invalid"] { border-color: var(--draft-warning); color: var(--draft-warning); }
+.draft-reason { display: block; }
+.draft-review summary { cursor: pointer; }
+.draft-breakdown { margin-top: .2rem; color: var(--muted); }
+.draft-total { font-variant-numeric: tabular-nums; }
 @media (max-width: 480px) {
   .draft-review { margin: .2rem .25rem 0; padding: .3rem .5rem; }
   .game-page .rack:has(.rack-backspace-tile) { flex-wrap: nowrap; gap: .25rem; }

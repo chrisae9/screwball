@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 
 test("browse beyond the first dozen, refine immediately and choose distinct opponents", async ({ page }) => {
   const players = Array.from({ length: 24 }, (_, i) => ({ id: String(i), name: "Player " + String(i + 1).padStart(2, "0") }));
-  players.push({ id: "z", name: "Zoë" });
+  players.push({ id: "z", name: "Zoë", handle: "zoefox" });
   await page.route("**/api/players", route => route.fulfill({json: players}));
   await page.request.post("/auth/login/begin", {data: {username: "scott"}});
   await page.goto("/games/new");
@@ -14,9 +14,14 @@ test("browse beyond the first dozen, refine immediately and choose distinct oppo
   await rows.last().scrollIntoViewIfNeeded();
   expect(await panel.locator("ul").evaluate(el => el.scrollTop)).toBeGreaterThan(0);
   const filter = panel.getByRole("searchbox");
-  await filter.fill("z");
+  expect(await filter.evaluate(input => [input.type, input.form.id, input.enterKeyHint])).toEqual(["search", "player-directory-search", "search"]);
+  await filter.fill("@zoe");
+  await filter.press("Enter");
+  await expect(filter).not.toBeFocused();
+  await expect(page).toHaveURL(/\/games\/new$/);
+  await expect(page.locator('[name="seat2"]')).toHaveValue("invite");
   await expect(rows).toHaveCount(1);
-  await expect(rows).toHaveAccessibleName("Zoë");
+  await expect(rows).toHaveAccessibleName(/@zoefox.*Zoë/);
   await filter.fill("absent");
   await expect(panel.getByRole("status")).toHaveText("No matching players.");
   await filter.fill("");
@@ -26,7 +31,7 @@ test("browse beyond the first dozen, refine immediately and choose distinct oppo
   await expect(panel.getByRole("searchbox")).toHaveAccessibleName("Player for seat 3");
   await expect(rows).toHaveCount(24);
   await expect(panel.getByRole("button", {name:"Player 24", exact:true})).toHaveCount(0);
-  await panel.getByRole("button", {name:"Zoë", exact:true}).click();
+  await panel.getByRole("button", {name:/@zoefox.*Zoë/}).click();
   await expect(page.locator('[name="seat3"]')).toHaveValue("invite:z");
   await page.locator('[name="seat2"]').selectOption("easy");
   await page.getByText("Change", {exact:true}).click();
@@ -41,6 +46,11 @@ test("existing game host gets an immediate roster and can select a recipient", a
   const list = page.getByRole("list", {name:"Available players"});
   await expect(list.getByRole("button", {name:"Shelli", exact:true})).toHaveCount(0);
   const send = page.getByRole("button", {name:"Send invitation"});
+  const filter = page.getByRole("searchbox", {name:"Player to invite"});
+  await filter.fill("Sco");
+  await filter.press("Enter");
+  await expect(filter).not.toBeFocused();
+  expect(await filter.evaluate(input => input.form.id)).toBe("player-directory-search");
   await expect(send).toBeDisabled();
   await list.getByRole("button", {name:"Scott", exact:true}).click();
   await expect(send).toBeEnabled();

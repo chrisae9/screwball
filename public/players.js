@@ -54,7 +54,8 @@ function playerPicker(label, choose, otherSeats) {
   const panel = document.createElement("details");
   panel.className = "player-picker";
   panel.innerHTML = `<summary><span class="picker-title">Choose a player</span><span class="picker-action"></span></summary>
-    <div class="picker-content"><input type="search" placeholder="Filter by name or @username" autocomplete="off">
+    <div class="picker-content"><input type="search" name="q" form="player-directory-search" placeholder="Find players"
+      autocomplete="off" autocapitalize="none" spellcheck="false" enterkeyhint="search">
     <ul class="picker-roster" aria-label="Available players"></ul><div class="picker-status" role="status"></div></div>`;
   const summary = panel.querySelector("summary");
   const title = panel.querySelector(".picker-title");
@@ -138,13 +139,25 @@ function playerPicker(label, choose, otherSeats) {
   }
   input.addEventListener("input", render);
   input.addEventListener("keydown", event => {
-    if (event.key === "Enter") event.preventDefault();
+    if (event.key === "Enter" && !event.isComposing) {
+      event.preventDefault();
+      input.blur();
+    }
   });
   panel.addEventListener("toggle", () => { if (panel.open) void browse(); });
   return {panel, reset: () => select(null)};
 }
 
 const seats = [...document.querySelectorAll(".new-game-form select[name^=seat]")];
+// Give the directory filters their own form owner while keeping each beside its seat.
+if (seats.length || inviteForm) {
+  const searchForm = document.createElement("form");
+  searchForm.id = "player-directory-search";
+  searchForm.autocomplete = "off";
+  searchForm.hidden = true;
+  searchForm.addEventListener("submit", event => event.preventDefault());
+  document.body.append(searchForm);
+}
 for (const seat of seats) {
   const invite = seat.querySelector('option[value="invite"]');
   const picker = playerPicker("Player for seat " + seat.name.slice(4), player => {

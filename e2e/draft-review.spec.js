@@ -17,20 +17,27 @@ test("a player can check a word, correct it and return from chat with the draft 
   const clear = page.getByRole("button", {name: "Clear", exact: true});
   const chat = page.getByRole("link", {name: /chat/i});
 
+  const controls = page.locator(".rack-area .controls");
+  const controlsTop = () => controls.evaluate(el => el.getBoundingClientRect().top - el.parentElement.getBoundingClientRect().top);
   await expect(tile("F")).toBeVisible();
   await expect(chat.locator("svg")).toBeVisible();
   const target = await chat.boundingBox();
   expect(target.width).toBeGreaterThanOrEqual(44);
   expect(target.height).toBeGreaterThanOrEqual(44);
+  const restingTop = await controlsTop();
   await center.click();
   await tile("F").click();
   await tile("V").click();
   await expect(review).toHaveAttribute("data-state", "invalid");
   await expect(review.locator(".draft-word.is-invalid")).toContainText("FV");
   await expect(play).toBeDisabled();
+  await expect(review).toHaveText("FV isn’t in the dictionary.");
+  expect(Math.abs(await controlsTop() - restingTop)).toBeLessThanOrEqual(1);
+  expect(await review.evaluate(el => el.getBoundingClientRect().top >= el.parentElement.querySelector(".controls").getBoundingClientRect().bottom)).toBe(true);
 
   await clear.click();
   await expect(review).toHaveCount(0);
+  expect(Math.abs(await controlsTop() - restingTop)).toBeLessThanOrEqual(1);
   await center.click();
   await tile("F").click();
   await tile("A").click();
@@ -39,6 +46,8 @@ test("a player can check a word, correct it and return from chat with the draft 
   await expect(review.locator(".draft-word")).toContainText("FAR");
   await expect(review.locator(".draft-total")).toContainText("12");
   await expect(play).toBeEnabled();
+  await expect(review).toHaveText("FAR · 12 pts");
+  expect(Math.abs(await controlsTop() - restingTop)).toBeLessThanOrEqual(1);
   await Promise.all([page.waitForURL("**" + fixture + "/chat", {waitUntil:"domcontentloaded"}), chat.click()]);
   await expect(page.getByRole("heading", {name: "Game chat"})).toBeVisible();
   await Promise.all([

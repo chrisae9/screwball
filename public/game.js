@@ -153,46 +153,43 @@ function usePlayPreview(gameId, version, placements) {
   return answer?.key === key ? answer : {state: "checking"};
 }
 
+// Grandpa Mode can reject a dictionary word alongside an unrecognized cross.
+function rejectedDraftWords(result) {
+  const rejected = [...new Set(result.words.filter(word => !word.valid).map(word => word.word))];
+  if (!rejected.length) {
+    const reason = result.error || "Try a different placement.";
+    return reason[0].toUpperCase() + reason.slice(1);
+  }
+  const prefix = "not allowed in Grandpa Mode: ";
+  const limited = result.error?.startsWith(prefix) ? result.error.slice(prefix.length).split(", ") : [];
+  const groups = [
+    [rejected.filter(word => limited.includes(word)), "allowed in Grandpa Mode"],
+    [rejected.filter(word => !limited.includes(word)), "in the dictionary"],
+  ];
+  return groups.filter(([words]) => words.length).map(([words, reason]) => html`
+    <span class="draft-reason"><strong class="draft-word is-invalid">${words.join(", ")}</strong>${words.length === 1 ? " isn’t " : " aren’t "}${reason}.</span>`);
+}
+
 function DraftReview({preview, personalBest}) {
   const {state, result} = preview;
-  const words = result?.words ?? [];
-  const rejected = words.filter(word => !word.valid);
-  const allowed = words.filter(word => word.valid);
-  const badge = state === "valid" ? "✓" : state === "invalid" ? "!" : "·";
-  let reason = "";
-  let title;
+  let content;
   if (state === "valid") {
-    title = "Valid play";
+    const words = result.words;
+    const bonus = result.points - words.reduce((sum, word) => sum + word.points, 0);
+    const score = html`<span><strong class="draft-word">${words.map(w => w.word).join(", ")}</strong>${" · "}<strong class="draft-total">${result.points} ${result.points === 1 ? "pt" : "pts"}</strong></span>`;
+    const details = [];
+    if (words.length > 1) details.push(words.map(w => w.word + " " + w.points).join(" · "));
+    if (bonus > 0) details.push("Bingo +" + bonus);
+    if (personalBest != null) details.push("Your best this game · " + personalBest);
+    content = details.length ? html`<details><summary>${score}</summary>
+      <div class="draft-breakdown">${details.map(line => html`<div>${line}</div>`)}</div></details>` : score;
   } else if (state === "invalid") {
-    title = rejected.length ? "Check your words" : "Adjust placement";
-    const error = result.error || "Try a different placement.";
-    // The rejected words are shown individually just below the reason.
-    const message = rejected.length ? error.split(":")[0] : error;
-    reason = message[0].toUpperCase() + message.slice(1);
-  } else if (state === "checking") {
-    title = "Checking play…";
+    content = rejectedDraftWords(result);
   } else {
-    title = "Preview unavailable";
-    reason = "Play will check these tiles.";
+    content = state === "checking" ? "Checking…" : "Word check unavailable. Play to check.";
   }
-  const bonus = state === "valid" ? result.points - words.reduce((sum, w) => sum + w.points, 0) : 0;
   return html`<section class="draft-review" data-state=${state} role="status" aria-live="polite" aria-atomic="true">
-    <div class="draft-verdict">
-      <span class="draft-mark" aria-hidden="true">${badge}</span>
-      <strong>${title}</strong>
-      ${state === "valid" && html`<strong class="draft-total">${result.points} pts</strong>`}
-    </div>
-    ${reason && html`<p class="draft-reason">${reason}</p>`}
-    ${words.length > 0 && html`<div class="draft-details">
-      <div class="draft-words" aria-label="Formed words">${[...rejected, ...allowed].map((w, i) => html`
-        <span key=${i} class=${"draft-word" + (w.valid ? "" : " is-invalid")}>
-          ${w.word}${w.valid && words.length > 1 && html`<small> ${w.points}</small>`}
-          ${!w.valid && html`<small aria-label="invalid"> ×</small>`}
-        </span>`)}
-        ${bonus > 0 && html`<span class="draft-bonus">Bingo +${bonus}</span>`}
-      </div>
-      ${state === "valid" && personalBest != null && html`<small class="draft-best">Your best this game · ${personalBest}</small>`}
-    </div>`}
+    ${content}
   </section>`;
 }
 
@@ -2430,6 +2427,7 @@ function App({ gameId, initial, autoZoom }) {
   }
 
   function clearPendingTiles() {
+    setError(null);
     setPending([]);
     setCursor(null);
     setSelected(null);
@@ -2589,12 +2587,12 @@ function App({ gameId, initial, autoZoom }) {
               onHover=${game.john_mode ? setHoverLetter : null}
             />`
           : null,
+        controls,
         mode === "exchange"
           ? html`<p class="muted exchange-tip">Tap tiles to swap, then press Swap.</p>`
           : null,
         error ? html`<p class="move-error" role="alert">${error}</p>` : null,
-        preview ? html`<${DraftReview} preview=${preview} personalBest=${personalBest}/>` : null,
-        controls,
+        !error && preview ? html`<${DraftReview} preview=${preview} personalBest=${personalBest}/>` : null,
         hintsEnabled && hintResult
           ? html`<p class="hint-result" role="status" aria-live="polite">${hintResult}</p>`
           : null,
