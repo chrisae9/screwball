@@ -269,7 +269,7 @@ fn mobile_touch_drop_target_is_separate_from_dragged_tile() {
 }
 
 #[test]
-fn last_play_highlight_sits_outside_tile_content() {
+fn last_play_and_pending_highlights_stay_in_their_own_cells() {
     assert!(
         GAME_JS.contains("\"cell tile\",\n      lastPlay ? \"last-play\" : \"\",")
             && !GAME_JS.contains("lastPlay=${lp}")
@@ -277,22 +277,17 @@ fn last_play_highlight_sits_outside_tile_content() {
         "last-play class should be on the board cell, not inside the tile face",
     );
     assert!(
-        css_rule_contains(".cell.tile.last-play", "overflow: visible;")
-            && css_rule_contains(".cell.tile.last-play::after", "inset: -3px;")
-            && css_rule_contains(
-                ".cell.tile.last-play::after",
-                "border: 2px solid var(--accent);"
-            )
-            && css_rule_contains(".cell.tile.last-play::after", "border-radius: 5px;")
-            && css_rule_contains(".cell.tile.last-play::after", "pointer-events: none;"),
-        "last-play highlight should render as an outside ring matching the tile radius",
+        css_rule_contains(".cell.tile.last-play", "box-shadow: inset 0 -1px")
+            && css_rule_contains(".cell .tile-face.pending", "box-shadow: inset 0 -2px")
+            && !APP_CSS.contains(".cell.pending-cell::after"),
+        "staged and committed highlights should leave neighboring letters visible",
     );
 }
 
 #[test]
 fn mobile_game_controls_are_compact_and_score_is_separate() {
     assert!(
-        GAME_JS.contains("Play ${pendingScore != null ? pendingScore : \"\"}")
+        GAME_JS.contains("busy ? \"Playing…\" : \"Play\"")
             && GAME_JS.contains("}, \"Clear\")")
             && GAME_JS.contains("}, \"Swap\")")
             && GAME_JS.contains("}, \"Next\")")
@@ -311,10 +306,10 @@ fn mobile_game_controls_are_compact_and_score_is_separate() {
         "controls should support next-game navigation and confirm pass",
     );
     assert!(
-        GAME_JS.contains("header-pending-score")
-            && GAME_JS.contains("pending.textContent = `+${pendingScore}`")
-            && !GAME_JS.contains("class: \"pending-score\""),
-        "pending word score should render in the header, not above the board or inside the Play button",
+        GAME_JS.contains("class=\"draft-total\"")
+            && GAME_JS.contains("result.points")
+            && !GAME_JS.contains("header-pending-score"),
+        "draft points belong in the validation result beside the rack",
     );
     assert!(
         GAME_JS.contains("rack-backspace-tile")
@@ -401,26 +396,24 @@ fn desktop_game_page_keeps_scroll_inside_game_surfaces() {
 }
 
 #[test]
-fn other_games_sidebar_hides_finished_games() {
-    assert!(
-        GAME_JS.contains("data.filter((g) => g.id !== gameId && g.status !== \"finished\")")
-            && GAME_JS
-                .contains("games.filter((g) => g.id !== gameId && g.status !== \"finished\")"),
-        "the in-game other-games sidebar should not render finished games or notify for them",
-    );
+fn game_switching_is_kept_off_the_board() {
+    assert!(!GAME_JS.contains("Your other games"));
+    assert!(!include_str!("../src/render.rs").contains("Your other games"));
+    assert!(GAME_JS.contains("goToNextGame"));
 }
 
 #[test]
 fn dark_mode_uses_browser_preference_and_keeps_tiles_legible() {
     assert!(
-        APP_CSS.contains("@media (prefers-color-scheme: dark)")
+        include_str!("../src/render.rs").contains("media=\"(prefers-color-scheme: dark)\"")
+            && include_str!("../public/dark.css").contains("--tile-ink: #1f2933;")
             && APP_CSS.contains("--tile-ink: #1f2933;"),
         "dark mode should follow the browser preference and keep a dedicated tile text color",
     );
     assert!(
         css_rule_contains(".cell.tile", "color: var(--tile-ink);")
             && css_rule_contains(".rack-tile", "color: var(--tile-ink);")
-            && css_rule_contains(".cell .tile-face.pending", "color: var(--tile-ink);")
+            && css_rule_contains(".cell .tile-face.pending", "color: var(--draft-ink);")
             && css_rule_contains(".cell.board-drop-ghost::before", "color: var(--tile-ink);"),
         "light tile faces should not inherit the dark page text color",
     );
@@ -429,7 +422,7 @@ fn dark_mode_uses_browser_preference_and_keeps_tiles_legible() {
 #[test]
 fn header_has_single_home_link_and_mobile_score() {
     assert!(
-        GAME_JS.contains("function renderHeaderScores(game, pendingScore)")
+        GAME_JS.contains("function renderHeaderScores(game)")
             && GAME_JS.contains("header-score")
             && GAME_JS.contains("turn-dot")
             && GAME_JS.contains("item.classList.add(\"on-turn\")")
@@ -443,20 +436,17 @@ fn header_has_single_home_link_and_mobile_score() {
     );
     assert!(
         APP_CSS.contains(".nav .brand {\n  justify-self: start;\n  display: inline-flex;\n  width: 1.5rem;\n  height: 1.5rem;")
-            && APP_CSS.contains(".nav .brand {\n    width: 1.15rem;\n    height: 1.15rem;")
-            && APP_CSS.contains("height: calc(100dvh - 41px);"),
-        "header icon should stay compact and preserve the previous mobile header height",
+            && APP_CSS.contains(".nav .brand {\n    width: 1.15rem;\n    height: 1.15rem;"),
+        "header icon should stay compact on mobile",
     );
     assert!(
         css_rule_contains(".header-score-name", "overflow: hidden;")
             && css_rule_contains(".header-score-name", "text-overflow: ellipsis;")
             && css_rule_contains(".header-score-name", "white-space: nowrap;")
-            && css_rule_contains(".header-score-value", "flex: 0 0 auto;")
-            && css_rule_contains(".header-score", "flex: 0 1 auto;")
-            && css_rule_contains(".header-score", "max-width: min(10rem, 42vw);")
-            && APP_CSS.contains(
-                ".header-score,\n.header-pending-score {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;"
-            )
+            && APP_CSS.contains(".header-score-value {\n  flex: 0 0 auto;")
+            && APP_CSS.contains("flex: 0 1 auto;")
+            && APP_CSS.contains("max-width: min(10rem, 42vw);")
+            && css_rule_contains(".header-score", "display: inline-flex;")
             && APP_CSS.contains(".header-score {\n    max-width: min(9rem, 40vw);"),
         "long player names should ellipsize while centered score pills stay content-sized with max-widths",
     );
@@ -521,7 +511,9 @@ fn pwa_turn_affordance_uses_badging_api() {
     );
     assert!(
         GAME_JS.contains("setTurnAffordanceSource(\"current-game\", yourTurn ? 1 : 0)")
-            && GAME_JS.contains("setTurnAffordanceSource(\"other-games\", nowTurn.size)"),
+            && GAME_JS.contains(
+                "setTurnAffordanceSource(\"other-games\", Number(nav.dataset.otherTurns)"
+            ),
         "badge count should include the current game and other games where it is your turn",
     );
 }

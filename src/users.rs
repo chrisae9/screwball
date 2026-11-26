@@ -33,12 +33,59 @@ pub struct UserSettings {
     #[serde(default)]
     pub auto_zoom: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub avatar_id: Option<u8>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub away_until: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub away_indefinitely: bool,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum AwayState {
+    #[default]
+    Off,
+    Until(DateTime<Utc>),
+    Indefinite,
+}
+
+impl AwayState {
+    pub fn is_active(self) -> bool {
+        self != Self::Off
+    }
+
+    /// This value changes when a pause is extended, replaced or expires.
+    pub fn token(self) -> String {
+        match self {
+            Self::Off => "off".into(),
+            Self::Indefinite => "indefinite".into(),
+            Self::Until(until) => until.to_rfc3339(),
+        }
+    }
 }
 
 impl UserSettings {
-    pub fn active_away_until(&self, now: DateTime<Utc>) -> Option<DateTime<Utc>> {
-        self.away_until.filter(|until| *until > now)
+    pub fn avatar(&self, user_id: Uuid) -> u8 {
+        self.avatar_id
+            .filter(|&id| id < crate::avatars::COUNT)
+            .unwrap_or((user_id.as_u128() % u128::from(crate::avatars::COUNT)) as u8)
+    }
+
+    pub fn away_state(&self, now: DateTime<Utc>) -> AwayState {
+        if self.away_indefinitely {
+            AwayState::Indefinite
+        } else {
+            self.away_until
+                .filter(|until| *until > now)
+                .map_or(AwayState::Off, AwayState::Until)
+        }
+    }
+
+    pub fn set_away(&mut self, state: AwayState) {
+        self.away_indefinitely = state == AwayState::Indefinite;
+        self.away_until = match state {
+            AwayState::Until(until) => Some(until),
+            _ => None,
+        };
     }
 }
 
@@ -125,6 +172,14 @@ impl UserStore {
         self.index.lock().await.by_id.get(&id).cloned()
     }
 
+    pub async fn has_push_endpoint(&self, id: Uuid, endpoint: &str) -> bool {
+        self.index.lock().await.by_id.get(&id).is_some_and(|user| {
+            user.push_subscriptions
+                .iter()
+                .any(|subscription| subscription.endpoint == endpoint)
+        })
+    }
+
     pub async fn invitable_player(&self, id: Uuid) -> Option<User> {
         self.get(id)
             .await
@@ -166,7 +221,7 @@ impl UserStore {
         }
     }
 
-    pub async fn search_players(&self, viewer: Uuid, query: &str) -> Vec<(Uuid, String)> {
+    pub async fn search_players(&self, viewer: Uuid, query: &str) -> Vec<(Uuid, String, u8)> {
         let query = query.trim().to_lowercase();
         let index = self.index.lock().await;
         let mut matches: Vec<_> = index
@@ -177,9 +232,15 @@ impl UserStore {
                     && !self.hidden_player_handles.contains(&user.username)
                     && user.display_name.to_lowercase().contains(&query)
             })
-            .map(|user| (user.id, user.display_name.clone()))
+            .map(|user| {
+                (
+                    user.id,
+                    user.display_name.clone(),
+                    user.settings.avatar(user.id),
+                )
+            })
             .collect();
-        matches.sort_by_key(|(id, name)| (name.to_lowercase(), *id));
+        matches.sort_by_key(|(id, name, _)| (name.to_lowercase(), *id));
         matches
     }
 
@@ -350,19 +411,42 @@ mod away_tests {
     use super::*;
 
     #[test]
+    fn indefinite_and_timed_pauses_replace_each_other_and_survive_reload() {
+        let now = Utc::now();
+        let later = now + chrono::Duration::days(2);
+        let legacy = serde_json::json!({"auto_zoom": true, "away_until": later});
+        let mut settings: UserSettings = serde_json::from_value(legacy).unwrap();
+        assert_eq!(settings.away_state(now), AwayState::Until(later));
+        settings.set_away(AwayState::Indefinite);
+        let mut saved: UserSettings =
+            serde_json::from_str(&serde_json::to_string(&settings).unwrap()).unwrap();
+        assert_eq!(saved.away_until, None);
+        assert_eq!(
+            saved.away_state(later + chrono::Duration::days(365)),
+            AwayState::Indefinite
+        );
+        saved.set_away(AwayState::Until(later));
+        assert!(!saved.away_indefinitely);
+        assert_eq!(saved.away_state(now), AwayState::Until(later));
+        saved.set_away(AwayState::Off);
+        assert_eq!(saved.away_state(now), AwayState::Off);
+        assert!(saved.auto_zoom);
+    }
+
+    #[test]
     fn legacy_settings_are_available_and_away_expires_at_the_deadline() {
         let mut settings: UserSettings = serde_json::from_str(r#"{"auto_zoom":true}"#).unwrap();
         let now = Utc::now();
-        assert_eq!(settings.active_away_until(now), None);
+        assert_eq!(settings.away_state(now), AwayState::Off);
         settings.away_until = Some(now);
         assert_eq!(
-            settings.active_away_until(now - chrono::Duration::seconds(1)),
-            Some(now)
+            settings.away_state(now - chrono::Duration::seconds(1)),
+            AwayState::Until(now)
         );
-        assert_eq!(settings.active_away_until(now), None);
+        assert_eq!(settings.away_state(now), AwayState::Off);
         assert_eq!(
-            settings.active_away_until(now + chrono::Duration::seconds(1)),
-            None
+            settings.away_state(now + chrono::Duration::seconds(1)),
+            AwayState::Off
         );
     }
 }

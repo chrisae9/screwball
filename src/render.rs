@@ -4,9 +4,7 @@ use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
 use crate::models::{BOARD_SIZE, Board, Game, GameStatus, SeatKind};
-use crate::view::{
-    GameSummary, GameView, PositionView, SquareView, effective_updated_at, premium_code,
-};
+use crate::view::{GameView, PositionView, SquareView, effective_updated_at, premium_code};
 
 /// Content-hash of the static assets, set once at startup for release builds.
 /// Debug builds hash each asset at render time so local edits do not keep
@@ -65,7 +63,20 @@ fn layout_with_head(
     body_class: &str,
     nav_actions: &str,
 ) -> String {
-    layout_with_back(title, body, head_extra, body_class, nav_actions, None)
+    layout_with_back(
+        title,
+        body,
+        head_extra,
+        body_class,
+        nav_actions,
+        BackTarget::Games,
+    )
+}
+
+enum BackTarget {
+    Games,
+    Board(Uuid),
+    Settings,
 }
 
 fn layout_with_back(
@@ -74,10 +85,10 @@ fn layout_with_back(
     head_extra: &str,
     body_class: &str,
     nav_actions: &str,
-    board: Option<Uuid>,
+    parent: BackTarget,
 ) -> String {
     format!(
-        r#"<!doctype html>
+        r##"<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
@@ -90,6 +101,12 @@ fn layout_with_back(
   <link rel="apple-touch-icon" sizes="180x180" href="{touch_icon}">
   <link rel="manifest" href="{manifest}">
   <link rel="stylesheet" href="{css}">
+  <style>:root{{--player-atlas:url('{player_atlas}')}}</style>
+  <link id="dark-palette" rel="stylesheet" href="{dark_css}" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#f4f1ea" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#11130f" media="(prefers-color-scheme: dark)">
+  <script src="{theme_js}"></script>
+  <script type="module" src="{presence_js}"></script>
   <script type="module" src="{players_js}"></script>
   {head_extra}
 </head>
@@ -102,15 +119,21 @@ fn layout_with_back(
   {body}
   </main>
 </body>
-</html>"#,
+</html>"##,
         title = escape(title),
         css = asset("/public/app.css"),
+        player_atlas = asset("/public/player-icons.png"),
+        dark_css = asset("/public/dark.css"),
+        theme_js = asset("/public/theme.js"),
         favicon = asset("/public/favicon.svg"),
+        presence_js = asset("/public/presence.js"),
         players_js = asset("/public/players.js"),
-        back = if let Some(id) = board {
+        back = if let BackTarget::Board(id) = parent {
             format!(
                 r#"<a class="back-link" href="/games/{id}" aria-label="Back to board"><span aria-hidden="true">‹</span> Board</a>"#
             )
+        } else if matches!(parent, BackTarget::Settings) {
+            r#"<a class="back-link" href="/settings" aria-label="Back to settings"><span aria-hidden="true">‹</span> Settings</a>"#.to_string()
         } else if title == "Scrabble" {
             format!(
                 r#"<a class="brand" href="/" aria-label="Scrabble home"><img class="brand-icon" src="{}" alt=""></a>"#,
@@ -134,7 +157,6 @@ pub fn error_page(title: &str, message: &str) -> String {
             r#"<section class="card">
   <h1>{}</h1>
   <p>{}</p>
-  <p><a href="/">Back home</a></p>
 </section>"#,
             escape(title),
             escape(message)
@@ -167,7 +189,6 @@ pub fn home_activity(
     } else {
         format!(
             r#"<h1>Open games</h1>
-  <p class="muted">Games with open seats waiting for another player.</p>
   {}"#,
             open_game_list(joinable_games),
         )
@@ -180,7 +201,7 @@ pub fn home_activity(
     }
 }
 
-pub fn home_page(activity: Option<HomeActivity>, display_name: Option<&str>) -> String {
+pub fn home_page(activity: Option<HomeActivity>, profile: Option<&crate::users::User>) -> String {
     let Some(HomeActivity {
         away,
         invitations,
@@ -199,14 +220,20 @@ pub fn home_page(activity: Option<HomeActivity>, display_name: Option<&str>) -> 
             "",
         );
     };
-    let greeting = display_name
-        .map(|name| format!("Signed in as <strong>{}</strong>", escape(name)))
+    let greeting = profile
+        .map(|u| {
+            format!(
+                "{} <span>Signed in as <strong>{}</strong></span>",
+                crate::avatars::image(u.settings.avatar(u.id)),
+                escape(&u.display_name)
+            )
+        })
         .unwrap_or_else(|| "Signed in".to_string());
     layout_with_head(
         "Scrabble",
         &format!(
             r#"<section class="card account">
-  <p class="muted">{greeting}</p>
+  <p class="muted profile-greeting">{greeting}</p>
   <a class="button new-game-link" href="/games/new">New game</a>
   <a class="button button-secondary" href="/leaderboard">Leaderboard</a>
   <a class="button button-secondary" href="/settings">Settings</a>
@@ -220,18 +247,17 @@ pub fn home_page(activity: Option<HomeActivity>, display_name: Option<&str>) -> 
   <strong>Phone alerts</strong><p class="muted" id="notif-status" role="status"></p>
   <button type="button" id="notif-enable" class="button" hidden>Enable notifications</button>
 </aside>
-<section class="card" id="open-games">{open_games}</section>
-<section class="card">
+<section class="card match-section">
   <h1>Your games</h1>
   <div id="my-games">{list}</div>
-  <p class="debug-link"><a href="/debug/notifications">Notification debug</a> | <a href="/debug/touch">Touch debug</a></p>
-</section>"#
+</section>
+<section class="card match-section" id="open-games">{open_games}</section>"#
         ),
         &format!(
             r#"<script type="module" src="{}"></script>"#,
             asset("/public/settings.js")
         ),
-        "",
+        "dashboard-page",
         "",
     )
 }
@@ -256,35 +282,52 @@ pub fn invite_page(id: Uuid) -> String {
         &format!(
             r#"<section class="card"><h1>Invite a player</h1>
 <form class="form" data-invite-form="{id}" method="post" action="/games/{id}/invite"><input name="player" type="hidden">
-<button class="button">Send invitation</button></form><p><a href="/games/{id}">Return to game</a></p></section>"#
+<button class="button">Send invitation</button></form></section>"#
         ),
         "",
         "",
         "",
-        Some(id),
+        BackTarget::Board(id),
     )
 }
 
-pub fn settings_page(settings: &crate::users::UserSettings) -> String {
-    let away = settings.active_away_until(chrono::Utc::now());
-    let away_control = if let Some(until) = away {
-        format!(
-            r#"<p>Notifications paused until <time id="away-until" datetime="{}">{}</time>.</p>
-<form method="post" action="/settings/away"><button class="button button-secondary" name="hours" value="0">Resume now</button></form>"#,
+pub fn settings_page(settings: &crate::users::UserSettings, avatar: u8) -> String {
+    use crate::users::AwayState;
+    let away = settings.away_state(chrono::Utc::now());
+    let away_state = away.token();
+    let away_status = match away {
+        AwayState::Off => String::new(),
+        AwayState::Indefinite => "<p>Notifications are paused until you resume them.</p>".into(),
+        AwayState::Until(until) => format!(
+            r#"<p>Notifications paused until <time id="away-until" datetime="{}">{}</time>.</p>"#,
             until.to_rfc3339(),
             until.format("%b %e at %H:%M UTC")
+        ),
+    };
+    let (duration_label, pause_action, resume) = if away.is_active() {
+        (
+            "Change pause to",
+            "Update pause",
+            r#"<form method="post" action="/settings/away"><button class="button button-secondary" name="hours" value="0">Resume now</button></form>"#,
         )
     } else {
-        r#"<form class="away-controls" method="post" action="/settings/away">
-<label for="away-hours">Pause for</label>
-<select id="away-hours" name="hours"><option value="1">1 hour</option><option value="4">4 hours</option><option value="8">8 hours</option><option value="24">24 hours</option></select>
-<button class="button button-secondary">Pause notifications</button></form>"#.to_string()
+        ("Pause for", "Pause notifications", "")
     };
     layout_with_head(
         "Settings — Scrabble",
         &format!(
             r#"<section class="card">
   <h1>Settings</h1>
+  {icon_chooser}
+  <fieldset class="appearance">
+    <legend>Appearance</legend>
+    <p>Choose a theme for this device.</p>
+    <div class="theme-options">
+      <label><input type="radio" name="appearance" value="system" checked><span>System</span></label>
+      <label><input type="radio" name="appearance" value="light"><span>Light</span></label>
+      <label><input type="radio" name="appearance" value="dark"><span>Dark</span></label>
+    </div>
+  </fieldset>
   <form method="post" action="/settings" class="form">
     <div class="form-option-row">
       <label class="checkbox-label" for="auto-zoom">
@@ -300,25 +343,40 @@ pub fn settings_page(settings: &crate::users::UserSettings) -> String {
   <p class="muted" id="notif-status">Checking…</p>
   <button type="button" id="notif-enable" class="button button-secondary" hidden>Enable notifications</button>
 </section>
-<section class="card away-settings">
+<section class="card away-settings" data-away-state="{away_state}">
   <h2>Away mode</h2>
   <p class="muted">Pause invitation and turn alerts on all your devices. Your games will keep updating.</p>
-  {away_control}
+  {away_status}
+  <form class="away-controls" method="post" action="/settings/away">
+    <label for="away-hours">{duration_label}</label>
+    <select id="away-hours" name="hours">
+      <option value="indefinite">Indefinite</option><option value="1">1 hour</option><option value="4">4 hours</option><option value="8">8 hours</option>
+      <option value="24">1 day</option><option value="48">2 days</option><option value="168">1 week</option>
+    </select>
+    <button class="button button-secondary">{pause_action}</button>
+  </form>
+  {resume}
 </section>
-<p class="muted"><a href="/">Back home</a></p>"#,
+<details class="card diagnostics"><summary>Diagnostics</summary>
+  <div class="diagnostic-actions">
+    <a class="button button-secondary" href="/debug/notifications">Notification diagnostics</a>
+    <a class="button button-secondary" href="/debug/touch">Touch diagnostics</a>
+  </div>
+</details>"#,
+            icon_chooser = crate::avatars::chooser(avatar),
             checked = if settings.auto_zoom { " checked" } else { "" },
         ),
         &format!(
             r#"<script type="module" src="{}" defer></script>"#,
             asset("/public/settings.js")
         ),
-        "",
+        "settings-page",
         "",
     )
 }
 
 pub fn notification_debug_page() -> String {
-    layout_with_head(
+    layout_with_back(
         "Notification debug",
         r#"<section class="card notification-debug">
   <h1>Notification debug</h1>
@@ -359,11 +417,12 @@ pub fn notification_debug_page() -> String {
         ),
         "",
         "",
+        BackTarget::Settings,
     )
 }
 
 pub fn touch_debug_page() -> String {
-    layout_with_head(
+    layout_with_back(
         "Touch debug",
         r#"<section class="touch-debug" aria-labelledby="touch-debug-title">
   <div class="touch-debug-board-panel">
@@ -435,6 +494,7 @@ pub fn touch_debug_page() -> String {
         ),
         "touch-debug-page",
         "",
+        BackTarget::Settings,
     )
 }
 
@@ -621,56 +681,76 @@ fn game_list(games: &[&Game], current: Uuid) -> String {
 }
 
 fn game_list_item(game: &Game, current: Uuid) -> String {
-    let players: Vec<String> = game.seats.iter().map(|seat| escape(&seat.name)).collect();
-    let status = match game.status {
-        GameStatus::Lobby => "lobby",
-        GameStatus::Active => "active",
-        GameStatus::Finished => "finished",
+    let your_turn = is_current_turn(game, current);
+    let state = match game.status {
+        GameStatus::Finished => "Final score".to_string(),
+        GameStatus::Lobby => "Waiting for players".to_string(),
+        GameStatus::Active if your_turn => "Your turn".to_string(),
+        GameStatus::Active => match game.seats.get(game.turn) {
+            Some(seat) if !matches!(seat.kind, SeatKind::Human { user_id: None }) => {
+                format!("{}’s turn", escape(&seat.name))
+            }
+            _ => "Waiting for a player".to_string(),
+        },
     };
-    let badge = if is_current_turn(game, current) {
-        " <span class=\"badge badge-turn\">your turn</span>"
-    } else {
-        ""
-    };
-    let item_class = if game.status == GameStatus::Finished {
-        "game-list-item is-finished"
-    } else {
-        "game-list-item"
-    };
+    let mut seats = String::new();
+    for seat in &game.seats {
+        let name = if matches!(seat.kind, SeatKind::Human { user_id: Some(id) } if id == current) {
+            "You".to_string()
+        } else {
+            escape(&seat.name)
+        };
+        let score = if matches!(seat.kind, SeatKind::Human { user_id: None }) {
+            String::new()
+        } else {
+            format!(
+                r#"<strong class="match-score">{}<span class="match-sr"> points</span></strong>"#,
+                seat.score
+            )
+        };
+        seats.push_str(&format!(
+            r#"<span class="match-player"><span>{name}</span>{score}</span>"#
+        ));
+    }
     format!(
-        r#"<li class="{item_class}">
-  <a href="/games/{id}">{players}</a>
-  <span class="game-list-status muted">{status}</span>{badge}
-  <span class="game-list-time muted">{time}</span>
-</li>"#,
+        r#"<li class="game-list-item"><a class="match-card" href="/games/{id}">
+  <span class="match-meta"><span class="match-status{turn_class}">{state}</span><time class="game-list-time" datetime="{updated}">{time}</time></span>
+  <span class="match-lineup">{seats}</span>
+</a></li>"#,
         id = game.id,
-        players = players.join(" vs "),
+        updated = effective_updated_at(game).to_rfc3339(),
         time = relative_time(effective_updated_at(game)),
+        turn_class = if your_turn { " your-turn" } else { "" },
     )
 }
 
 fn open_game_list(games: &[&Game]) -> String {
-    let rows: String = games.iter().copied().map(open_game_list_item).collect();
-    format!("<ul class=\"game-list open-game-list\">{rows}</ul>")
+    let mut games = games.to_vec();
+    games.sort_by_key(|game| std::cmp::Reverse(effective_updated_at(game)));
+    let rows: String = games.into_iter().map(open_game_list_item).collect();
+    format!(r#"<ul class="game-list open-game-list">{rows}</ul>"#)
 }
 
 fn open_game_list_item(game: &Game) -> String {
-    let players: Vec<String> = game.seats.iter().map(|seat| escape(&seat.name)).collect();
-    let status = match game.status {
-        GameStatus::Lobby => "lobby",
-        GameStatus::Active => "active",
-        GameStatus::Finished => "finished",
+    let players: Vec<_> = game
+        .seats
+        .iter()
+        .filter(|s| !matches!(s.kind, SeatKind::Human { user_id: None }))
+        .map(|s| escape(&s.name))
+        .collect();
+    let count = game.seats.iter().filter(|s| s.is_open()).count();
+    let label = if count == 1 {
+        "open seat"
+    } else {
+        "open seats"
     };
     format!(
-        r#"<li class="game-list-item open-game-list-item">
-  <a href="/games/{id}">{players}</a>
-  <span class="game-list-status muted">{status}</span>
+        r#"<li class="open-match"><a class="open-match-info" href="/games/{id}"><strong>{players}</strong><span>{count} {label}</span></a>
   <form class="inline-join-form" method="post" action="/games/{id}/join">
     <button type="submit" class="button button-secondary">Join</button>
-  </form>
-</li>"#,
+  </form></li>"#,
         id = game.id,
-        players = players.join(" vs "),
+        players = players.join(" · "),
     )
 }
 
@@ -685,7 +765,7 @@ fn relative_time(then: DateTime<Utc>) -> String {
     }
 }
 
-fn is_current_turn(game: &Game, current: Uuid) -> bool {
+pub(crate) fn is_current_turn(game: &Game, current: Uuid) -> bool {
     if game.status != GameStatus::Active {
         return false;
     }
@@ -699,14 +779,12 @@ pub fn game_page(
     initial_json: &str,
     two_letter_json: &str,
     grandpa_two_letter_json: &str,
-    other_games: &[GameSummary],
     logged_in: bool,
     auto_zoom: bool,
 ) -> String {
     let board = render_board_squares(&view.board, &view.last_play);
     let scoreboard = render_scoreboard(view);
     let log = render_move_log(view);
-    let other = render_other_games(other_games);
     let status_banner = render_status_banner(view);
     let join = render_join_form(view);
     // Neutralize any "</..." sequence (e.g. a player name containing "</script>")
@@ -735,7 +813,9 @@ pub fn game_page(
             > 1
     {
         nav_actions.push_str(&format!(
-            r#"<a class="game-chat-link" href="/games/{}/chat">Chat</a>"#,
+            r#"<a class="game-chat-link" href="/games/{}/chat" aria-label="Chat" title="Game chat">
+<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M20.5 14.5a3 3 0 0 1-3 3h-8l-5 3v-4a3 3 0 0 1-1.5-2.6V6.5a3 3 0 0 1 3-3h11.5a3 3 0 0 1 3 3z"/><path d="M7.5 8.5h8.5m-8.5 4h5.5"/></svg>
+</a><span class="match-sr chat-unread-status" role="status"></span>"#,
             view.id
         ));
     }
@@ -761,7 +841,6 @@ pub fn game_page(
       <aside class="sidebar">
         {scoreboard}
         {log}
-        {other}
       </aside>
     </div>
     <noscript><p class="muted">Enable JavaScript to place tiles and play.</p></noscript>
@@ -812,7 +891,7 @@ pub fn chat_page(id: Uuid, participants: &str) -> String {
         &head,
         "chat-page",
         "",
-        Some(id),
+        BackTarget::Board(id),
     )
 }
 
@@ -827,47 +906,6 @@ fn render_join_form(view: &GameView) -> String {
   <button type="submit" class="button">Join game</button>
 </form>"#,
         id = view.id,
-    )
-}
-
-/// The "your other games" panel: every other game the viewer is seated in, with
-/// games waiting on the viewer flagged "your turn".
-fn render_other_games(games: &[GameSummary]) -> String {
-    // Match the live OtherGames panel, which only lists in-progress games — else
-    // finished games flash in on first paint and vanish once JS hydrates.
-    let active: Vec<&GameSummary> = games.iter().filter(|game| game.is_active).collect();
-    if active.is_empty() {
-        return String::new();
-    }
-    let items: String = active
-        .iter()
-        .map(|game| {
-            let players: Vec<String> = game.players.iter().map(|name| escape(name)).collect();
-            let li_class = if game.your_turn {
-                " class=\"your-turn\""
-            } else {
-                ""
-            };
-            let tag = if game.your_turn {
-                "<span class=\"badge badge-turn\">your turn</span>".to_string()
-            } else {
-                format!("<span class=\"muted\">{}</span>", game.status)
-            };
-            format!(
-                r#"<li{li_class}>
-  <a href="/games/{id}">{players}</a>
-  {tag}
-</li>"#,
-                id = game.id,
-                players = players.join(" vs "),
-            )
-        })
-        .collect();
-    format!(
-        r#"<div class="other-games">
-  <h2>Your other games</h2>
-  <ul class="other-games-list">{items}</ul>
-</div>"#
     )
 }
 

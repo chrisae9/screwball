@@ -17,9 +17,66 @@ let polling = false;
 let retry;
 let readError = false;
 
+// A fetched page can contain offscreen messages or skip earlier pages. Only
+// acknowledge rows that reached the visible conversation on this device.
+const unseenRows = new Set();
+const seen = new Set();
+let savingReads = false;
+let readTimer;
+async function saveReads() {
+  clearTimeout(readTimer);
+  if (savingReads || !seen.size) return;
+  savingReads = true;
+  const batch = [...seen].slice(0, 100);
+  try {
+    const response = await fetch(url + "/read", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({seen: batch}), keepalive: true, signal: AbortSignal.timeout(8000),
+    });
+    if (response.ok) {
+      for (const seq of batch) seen.delete(seq);
+      if (seen.size) readTimer = setTimeout(saveReads, 0);
+    }
+  } catch { /* Visible chat polling retries a receipt after reconnect. */ }
+  finally { savingReads = false; }
+}
+
+function recordVisible() {
+  if (document.hidden) return;
+  const bounds = history.getBoundingClientRect();
+  const viewport = window.visualViewport;
+  const top = Math.max(bounds.top, viewport?.offsetTop ?? 0);
+  const bottom = Math.min(bounds.bottom, (viewport?.offsetTop ?? 0) + (viewport?.height ?? innerHeight));
+  for (const item of unseenRows) {
+    const rect = item.getBoundingClientRect();
+    if (!item.isConnected || rect.height === 0 || rect.bottom <= top || rect.top >= bottom) continue;
+    seen.add(Number(item.dataset.seq));
+    unseenRows.delete(item);
+  }
+  if (seen.size) {
+    clearTimeout(readTimer);
+    readTimer = setTimeout(saveReads, 80);
+  }
+}
+let readFrame;
+function scheduleVisible() {
+  if (readFrame) return;
+  readFrame = requestAnimationFrame(() => { readFrame = 0; recordVisible(); });
+}
+history.addEventListener("scroll", scheduleVisible, {passive: true});
+window.visualViewport?.addEventListener("resize", scheduleVisible);
+window.visualViewport?.addEventListener("scroll", scheduleVisible);
+document.addEventListener("visibilitychange", recordVisible);
+window.addEventListener("pagehide", saveReads);
+document.querySelector(".back-link")?.addEventListener("click", saveReads);
+
 function row(message) {
   const item = document.createElement("li");
   if (message.mine) item.classList.add("mine");
+  else {
+    item.dataset.seq = String(message.seq);
+    unseenRows.add(item);
+  }
   const meta = document.createElement("div");
   meta.className = "chat-meta";
   const author = document.createElement("strong");
@@ -61,6 +118,8 @@ async function refresh() {
     if (follow) history.scrollTop = history.scrollHeight;
     if (readError) status.textContent = "";
     readError = false;
+    recordVisible();
+    if (page.messages.length) void saveReads();
     if (page.messages.length === 50) queueMicrotask(refresh);
   } catch {
     if (!last) intro.textContent = "Waiting for a connection…";
@@ -81,6 +140,7 @@ older.addEventListener("click", async () => {
     if (page.messages.length) first = page.messages[0].seq;
     older.hidden = !page.more_before;
     history.scrollTop += history.scrollHeight - height;
+    scheduleVisible();
   } catch {
     status.textContent = "Couldn’t load earlier messages. Try again.";
   } finally {
@@ -117,7 +177,12 @@ form.addEventListener("submit", async event => {
 function resize() {
   if (window.visualViewport?.scale === 1) {
     const viewport = window.visualViewport;
-    document.body.style.setProperty("--chat-viewport", viewport.height + "px");
+    const nextHeight = viewport.height + "px";
+    const heightChanged = nextHeight !== document.body.style.getPropertyValue("--chat-viewport");
+    const following = history.scrollHeight - history.scrollTop - history.clientHeight < 64;
+    document.body.classList.toggle("chat-compact", viewport.height < 360);
+    document.body.style.setProperty("--chat-viewport", nextHeight);
+    if (heightChanged && following) requestAnimationFrame(() => { history.scrollTop = history.scrollHeight; });
     // Safari also pans the page to the focused text box when the keyboard opens.
     document.body.style.setProperty("--chat-top", viewport.pageTop + "px");
   }

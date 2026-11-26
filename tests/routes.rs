@@ -295,8 +295,7 @@ async fn home_page_logged_in_links_to_new_game_page() {
     assert!(html.contains("New game"));
     assert!(html.contains("href=\"/games/new\""));
     assert!(html.contains("Sign out"));
-    assert!(html.contains("href=\"/debug/notifications\""));
-    assert!(html.contains("href=\"/debug/touch\""));
+    assert!(html.contains("href=\"/settings\""));
     assert!(!html.contains("class=\"form new-game-form\""));
     assert!(!html.contains("Open games"));
     assert!(!html.contains("href=\"/demo\""));
@@ -395,7 +394,7 @@ async fn home_page_lists_joinable_open_games_separately() {
     let html = body_string(response).await;
 
     assert!(html.contains("<h1>Open games</h1>"));
-    assert!(html.contains("Host vs Open seat"));
+    assert!(html.contains("<strong>Host</strong><span>1 open seat</span>"));
     assert!(html.contains(&format!(r#"action="/games/{joinable_id}/join""#)));
     assert!(
         html.contains(r#"<button type="submit" class="button button-secondary">Join</button>"#)
@@ -404,7 +403,7 @@ async fn home_page_lists_joinable_open_games_separately() {
 
     let your_games = html.find("<h1>Your games</h1>").unwrap();
     let open_games = html.find("<h1>Open games</h1>").unwrap();
-    assert!(open_games < your_games);
+    assert!(your_games < open_games);
 }
 
 #[tokio::test]
@@ -551,16 +550,19 @@ async fn home_page_badges_only_games_waiting_on_you_and_separates_finished() {
     assert_eq!(response.status(), StatusCode::OK);
     let html = body_string(response).await;
 
-    assert_eq!(html.matches("badge badge-turn\">your turn").count(), 1);
+    assert_eq!(
+        html.matches("match-status your-turn\">Your turn").count(),
+        1
+    );
     assert!(!html.contains(">you</span>"));
     assert!(html.contains("<details class=\"finished-games\""));
     assert!(
         html.contains("<summary class=\"game-list-divider\"><span>Finished games</span></summary>")
     );
-    assert!(html.contains("class=\"game-list-item is-finished\""));
+    assert!(html.contains("Final score"));
 
     let divider = html.find("Finished games").unwrap();
-    let finished_game = html.find("Scott vs Chill bot").unwrap();
+    let finished_game = html.find("Chill bot").unwrap();
     assert!(divider < finished_game);
 }
 
@@ -962,6 +964,11 @@ async fn game_chat_is_private_idempotent_and_separate_from_moves() {
         get(&chat, Some(&outsider)),
         get(&format!("{board}/chat"), Some(&outsider)),
         post_json(&chat, Some(&outsider), payload.clone()),
+        post_json(
+            &format!("{chat}/read"),
+            Some(&outsider),
+            json!({"seen":[1]}).to_string(),
+        ),
     ] {
         assert_eq!(
             app.router().oneshot(request).await.unwrap().status(),
@@ -1028,4 +1035,120 @@ async fn game_chat_is_private_idempotent_and_separate_from_moves() {
     )
     .await;
     assert_eq!(before, after);
+}
+
+#[tokio::test]
+async fn draft_preview_checks_every_cross_and_leaves_game_untouched() {
+    use screwball::models::{PlacedTile, Position, Tile};
+
+    let app = test_app().await;
+    let (host, host_cookie) = app.new_session();
+    let (guest, guest_cookie) = app.new_session();
+    let (_, observer_cookie) = app.new_session();
+    let mut game = new_game(
+        [host, guest]
+            .into_iter()
+            .map(|id| SeatSpec {
+                kind: SeatKind::Human { user_id: Some(id) },
+                name: id.to_string(),
+            })
+            .collect(),
+        GameOptions {
+            hints_allowed: 1,
+            ..GameOptions::default()
+        },
+        &mut StdRng::seed_from_u64(123),
+    );
+    game.seats[0].rack = vec![Tile::Letter('T'), Tile::Letter('S')];
+    for (row, col, letter) in [(7, 5, 'C'), (7, 6, 'A'), (6, 7, 'A'), (8, 8, 'X')] {
+        game.board.set_tile(
+            Position::new(row, col),
+            PlacedTile {
+                letter,
+                is_blank: false,
+            },
+        );
+    }
+    let id = game.id;
+    app.insert_game(game).await;
+    let prior = app.store.snapshot(id).unwrap();
+    let mut events = app.store.subscribe();
+    let url = format!("/games/{id}/preview");
+
+    let t = json!({"row":7,"col":7,"letter":"t"});
+    let s = json!({"row":7,"col":8,"letter":"S"});
+    let draft = |tiles: Value| json!({"placements":tiles}).to_string();
+    for (cookie, expected) in [
+        (None, StatusCode::UNAUTHORIZED),
+        (Some(observer_cookie.as_str()), StatusCode::FORBIDDEN),
+        (
+            Some(guest_cookie.as_str()),
+            StatusCode::UNPROCESSABLE_ENTITY,
+        ),
+    ] {
+        let response = app
+            .router()
+            .oneshot(post_json(&url, cookie, draft(json!([t]))))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), expected);
+        let reply: Value = serde_json::from_str(&body_string(response).await).unwrap();
+        assert!(reply.get("error").is_some());
+        assert!(reply.get("words").is_none());
+    }
+    let preview = |tiles: Value| {
+        let request = post_json(&url, Some(&host_cookie), draft(tiles));
+        let service = app.router();
+        async move {
+            let response = service.oneshot(request).await.unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            serde_json::from_str::<Value>(&body_string(response).await).unwrap()
+        }
+    };
+    let disconnected = preview(json!([{"row":0,"col":0,"letter":"T"}])).await;
+    assert_eq!(disconnected["valid"], false);
+    assert_eq!(disconnected["words"], json!([]));
+    assert!(disconnected["error"].is_string());
+
+    let invalid = preview(json!([t, s])).await;
+    assert_eq!(invalid["valid"], false);
+    assert_eq!(invalid["points"], Value::Null);
+    assert_eq!(invalid["error"], "not in dictionary: SX");
+    assert_eq!(
+        invalid["words"],
+        json!([
+            {"word":"CATS","points":12,"valid":true},
+            {"word":"AT","points":4,"valid":true},
+            {"word":"SX","points":9,"valid":false}
+        ])
+    );
+    let valid = preview(json!([t])).await;
+    assert_eq!(
+        valid,
+        json!({"valid":true,"points":14,"error":null,"words":[
+            {"word":"CAT","points":10,"valid":true},
+            {"word":"AT","points":4,"valid":true}
+        ]})
+    );
+    assert!(Arc::ptr_eq(&prior, &app.store.snapshot(id).unwrap()));
+    assert!(matches!(
+        events.try_recv(),
+        Err(tokio::sync::broadcast::error::TryRecvError::Empty)
+    ));
+    let submitted = app
+        .router()
+        .oneshot(post_json(
+            &format!("/games/{id}/move"),
+            Some(&host_cookie),
+            json!({"kind":"play","placements":[t]}).to_string(),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(submitted.status(), StatusCode::OK);
+    let played = app.store.snapshot(id).unwrap();
+    assert_eq!(
+        played.moves[0].points,
+        valid["points"].as_u64().unwrap() as u32
+    );
+    assert_eq!(played.moves[0].words, vec!["CAT", "AT"]);
 }

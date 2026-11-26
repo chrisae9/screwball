@@ -64,16 +64,17 @@ html:has(body.chat-page) { overflow: hidden; overscroll-behavior: none; }
 .chat-form button:disabled { opacity: .65; cursor: wait; }
 .chat-older { padding-inline: 1rem; }
 
-.chat-heading .invitation-alert, .chat-heading .activity-reconnect {
-  position: static;
-  display: inline-flex;
-  align-items: center;
-  min-height: 44px;
-  margin: 0 .75rem 0 0;
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--accent);
-  font: inherit;
-  text-decoration: underline;
+
+/* A landscape keyboard can leave less height than the board header and two messages. */
+.chat-compact .page { padding-block: 0; }
+.chat-compact .nav { padding-block: 0; min-height: 44px; }
+.chat-compact .game-chat { border-block: 0; border-radius: 0; }
+.chat-compact .chat-heading {
+  display: flex; align-items: baseline; gap: .65rem; padding: .3rem .75rem;
 }
+.chat-compact .chat-heading h1 { flex: none; font-size: 1rem; }
+.chat-compact .chat-heading p {
+  margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.chat-compact .chat-history { padding: .35rem .75rem; }
+.chat-compact .chat-form { padding-block: .25rem max(.25rem, env(safe-area-inset-bottom)); }

@@ -71,7 +71,7 @@ test("a waiting host dashboard and recipient Settings update without navigation"
     await settings.getByRole("button", {name:"Accept invitation"}).click();
     await expect(row).toContainText(name);
     await expect(row).not.toContainText("(invited)");
-    const turn = row.locator("..").getByText("your turn", {exact:true});
+    const turn = row.locator("..").getByText("Your turn", {exact:true});
     await expect(turn).toBeVisible();
     expect((await host.request.post(board + "/move", {data:{kind:"pass"}})).ok()).toBe(true);
     await expect(turn).toHaveCount(0);

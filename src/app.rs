@@ -59,6 +59,7 @@ pub fn router(state: AppState) -> Router {
             "/settings",
             get(routes::settings_page).post(routes::update_settings),
         )
+        .route("/settings/avatar", post(routes::update_avatar))
         .route("/settings/away", post(routes::update_away))
         .route("/games", post(routes::create_game))
         .route("/games/new", get(routes::new_game_page))
@@ -74,11 +75,13 @@ pub fn router(state: AppState) -> Router {
         .route("/api/my-games", get(routes::my_games))
         .route("/api/push/vapid-public-key", get(routes::push_public_key))
         .route("/api/push/debug", get(routes::push_debug_status))
+        .route("/api/push/presence", post(crate::presence::update))
         .route("/api/push/subscribe", post(routes::push_subscribe))
         .route("/api/push/unsubscribe", post(routes::push_unsubscribe))
         .route("/api/push/test", post(routes::push_test))
         .route("/games/{id}", get(routes::game_page))
         .route("/games/{id}/chat", get(crate::chat::page))
+        .route("/api/games/{id}/chat/read", post(crate::chat::mark_read))
         .route(
             "/api/games/{id}/chat",
             get(crate::chat::history).post(crate::chat::send),
@@ -86,6 +89,7 @@ pub fn router(state: AppState) -> Router {
         .route("/games/{id}/join", post(routes::join_game))
         .route("/games/{id}/state", get(routes::game_state))
         .route("/games/{id}/events", get(routes::game_events))
+        .route("/games/{id}/preview", post(routes::preview_move))
         .route("/games/{id}/move", post(routes::submit_move))
         .route("/games/{id}/abandon", post(routes::abandon_game))
         .route("/games/{id}/hint", post(routes::hint))
@@ -319,10 +323,15 @@ fn asset_version() -> String {
         "public/scrabble-192.png",
         "public/scrabble-512.png",
         "public/app.css",
+        "public/dark.css",
+        "public/theme.js",
         "public/game.js",
         "public/chat.js",
         "public/chat.css",
         "public/players.js",
+        "public/presence.js",
+        "public/player-icons.png",
+        "public/player-icons.json",
         "public/settings.js",
         "public/auth.js",
         "public/touch-debug.js",

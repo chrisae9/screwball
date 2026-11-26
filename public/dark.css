@@ -1,0 +1,21 @@
+:root {
+  color-scheme: dark;
+  --draft-success: #9ed5b4;
+  --draft-warning: #ffb499;
+  --on-accent: #1b1d18;
+  --bg: #11130f;
+  --surface: #1b1d18;
+  --ink: #f4f1ea;
+  --muted: #a7adba;
+  --accent: #f0713d;
+  --line: #3a352b;
+  --border: #3a352b;
+  --board-bg: #2a2d32;
+  --dl: #527484;
+  --tl: #2f7f9d;
+  --dw: #7e4a3d;
+  --tw: #b64b2f;
+  --tile: #fff1b8;
+  --tile-edge: #d2b85f;
+  --tile-ink: #1f2933;
+}

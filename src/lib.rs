@@ -1,5 +1,6 @@
 pub mod app;
 pub mod auth;
+pub mod avatars;
 pub mod bag;
 pub mod board;
 pub mod bot;
@@ -11,6 +12,7 @@ pub mod game;
 pub mod invitations;
 pub mod leaderboard;
 pub mod models;
+pub mod presence;
 pub mod push;
 pub mod render;
 pub mod routes;

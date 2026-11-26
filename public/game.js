@@ -99,114 +99,101 @@ function showBoardDropGhost(cell, preview = activeDragPreview) {
   cell.dataset.dropBlank = preview.isBlank ? "true" : "false";
 }
 
-// Live score of the pending placements. Mirrors score logic in src/game.rs
-// (main run + cross words + 50 bingo). No dict check — server validates words.
-function previewScore(game, pending) {
-  if (!pending.length) return null;
-  const placed = new Map(pending.map((p) => [idx(p.row, p.col), p]));
-  const at = (r, c) => {
-    if (r < 0 || r >= SIZE || c < 0 || c >= SIZE) return null;
-    const sq = game.board[idx(r, c)];
-    const p = placed.get(idx(r, c));
-    // A Mimi swap scores its real letter but is not "newly placed": no
-    // premium re-trigger.
-    if (p) return { letter: p.letter, isBlank: p.isBlank, premium: sq.premium, placed: !p.isSwap };
-    if (sq.letter) return { letter: sq.letter, isBlank: sq.is_blank, premium: sq.premium, placed: false };
-    return null;
-  };
-  const run = ([sr, sc], [dr, dc]) => {
-    let r = sr, c = sc;
-    while (at(r - dr, c - dc)) { r -= dr; c -= dc; }
-    const cells = [];
-    while (at(r, c)) { cells.push([r, c]); r += dr; c += dc; }
-    return cells;
-  };
-  const multiCol = pending.some((p) => p.col !== pending[0].col);
-  const multiRow = pending.some((p) => p.row !== pending[0].row);
-  const [main, cross] = multiCol
-    ? [[0, 1], [1, 0]]
-    : multiRow
-      ? [[1, 0], [0, 1]]
-      : [[0, 1], [1, 0]];
-  const words = [];
-  const head = [pending[0].row, pending[0].col];
-  const m = run(head, main);
-  if (m.length >= 2) words.push(m);
-  for (const p of pending) {
-    if (p.isSwap) continue;
-    const x = run([p.row, p.col], cross);
-    if (x.length >= 2) words.push(x);
-  }
-  // No ≥2-letter word formed (e.g. a lone tile) — not a scorable play.
-  if (!words.length) return null;
-  let total = 0;
-  for (const cells of words) {
-    let ws = 0, wm = 1;
-    for (const [r, c] of cells) {
-      const t = at(r, c);
-      let v = pointsFor(t.letter, t.isBlank);
-      if (t.placed) {
-        if (t.premium === "dl") v *= 2;
-        else if (t.premium === "tl") v *= 3;
-        else if (t.premium === "dw") wm *= 2;
-        else if (t.premium === "tw") wm *= 3;
-      }
-      ws += v;
-    }
-    total += ws * wm;
-  }
-  if (pending.length === 7) total += 50;
-  return total;
+// Preview and Play send identical placements to the game engine. Bind each
+// result to its exact draft and board revision so a late reply cannot describe
+// a different move, even during a render before effect cleanup runs.
+function playPlacements(pending) {
+  return pending.map(({row, col, letter, isBlank}) => ({row, col, letter, is_blank: isBlank}));
 }
 
-// Whether the pending placement is structurally legal (ignores the dictionary —
-// the server still validates words). Mirrors validate_play in src/game.rs: in a
-// line, contiguous, forms a word, first move covers center, else connects to an
-// existing tile.
-function placementLegal(game, pending) {
-  if (!pending.length) return false;
-  if (pending.every((p) => p.isSwap)) return false;
-  const placedSet = new Set(pending.map((p) => idx(p.row, p.col)));
-  const newSet = new Set(
-    pending.filter((p) => !p.isSwap).map((p) => idx(p.row, p.col)),
-  );
-  const occupied = (r, c) => {
-    if (r < 0 || r >= SIZE || c < 0 || c >= SIZE) return false;
-    return Boolean(game.board[idx(r, c)].letter) || placedSet.has(idx(r, c));
-  };
-  const sameRow = pending.every((p) => p.row === pending[0].row);
-  const sameCol = pending.every((p) => p.col === pending[0].col);
-  if (!sameRow && !sameCol) return false;
-  const multiCol = pending.some((p) => p.col !== pending[0].col);
-  const multiRow = pending.some((p) => p.row !== pending[0].row);
-  const [main, cross] = multiCol
-    ? [[0, 1], [1, 0]]
-    : multiRow
-      ? [[1, 0], [0, 1]]
-      : [[0, 1], [1, 0]];
-  const run = ([sr, sc], [dr, dc]) => {
-    let r = sr, c = sc;
-    while (occupied(r - dr, c - dc)) { r -= dr; c -= dc; }
-    const cells = [];
-    while (occupied(r, c)) { cells.push([r, c]); r += dr; c += dc; }
-    return cells;
-  };
-  const mainRun = run([pending[0].row, pending[0].col], main);
-  const mainSet = new Set(mainRun.map(([r, c]) => idx(r, c)));
-  // Contiguity: every placed tile sits within the single main-axis run.
-  if (!pending.every((p) => mainSet.has(idx(p.row, p.col)))) return false;
-  const words = [];
-  if (mainRun.length >= 2) words.push(mainRun);
-  for (const p of pending) {
-    if (p.isSwap) continue;
-    const x = run([p.row, p.col], cross);
-    if (x.length >= 2) words.push(x);
+function usePlayPreview(gameId, version, placements) {
+  const [answer, setAnswer] = useState(null);
+  const body = placements.length ? JSON.stringify({placements}) : "";
+  const key = body && version + "|" + body;
+  useEffect(() => {
+    if (!key) return;
+    let active = true;
+    let controller;
+    let deadline;
+    async function check() {
+      controller?.abort();
+      clearTimeout(deadline);
+      const request = new AbortController();
+      controller = request;
+      deadline = setTimeout(() => request.abort(), 4500);
+      try {
+        const response = await fetch(`/games/${gameId}/preview`, {
+          method: "POST", headers: {"Content-Type": "application/json"},
+          body, cache: "no-store", signal: request.signal,
+        });
+        if (!response.ok) throw new Error("Preview unavailable");
+        const result = await response.json();
+        if (typeof result.valid !== "boolean" || !Array.isArray(result.words) ||
+            (result.valid && !Number.isInteger(result.points))) throw new Error("Invalid preview");
+        if (active && controller === request) {
+          setAnswer({key, state: result.valid ? "valid" : "invalid", result});
+        }
+      } catch {
+        if (active && controller === request) setAnswer({key, state: "unavailable"});
+      } finally {
+        if (controller === request) clearTimeout(deadline);
+      }
+    }
+    const timer = setTimeout(check, 160);
+    window.addEventListener("online", check);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+      clearTimeout(deadline);
+      controller?.abort();
+      window.removeEventListener("online", check);
+    };
+  }, [key, body, gameId]);
+  if (!key) return null;
+  return answer?.key === key ? answer : {state: "checking"};
+}
+
+function DraftReview({preview, personalBest}) {
+  const {state, result} = preview;
+  const words = result?.words ?? [];
+  const rejected = words.filter(word => !word.valid);
+  const allowed = words.filter(word => word.valid);
+  const badge = state === "valid" ? "✓" : state === "invalid" ? "!" : "·";
+  let reason = "";
+  let title;
+  if (state === "valid") {
+    title = "Valid play";
+  } else if (state === "invalid") {
+    title = rejected.length ? "Check your words" : "Adjust placement";
+    const error = result.error || "Try a different placement.";
+    // The rejected words are shown individually just below the reason.
+    const message = rejected.length ? error.split(":")[0] : error;
+    reason = message[0].toUpperCase() + message.slice(1);
+  } else if (state === "checking") {
+    title = "Checking play…";
+  } else {
+    title = "Preview unavailable";
+    reason = "Play will check these tiles.";
   }
-  if (!words.length) return false;
-  const boardEmpty = game.board.every((sq) => !sq.letter);
-  if (boardEmpty) return placedSet.has(idx(CENTER, CENTER));
-  // Must connect to an existing tile: some word cell isn't newly placed.
-  return words.some((cells) => cells.some(([r, c]) => !newSet.has(idx(r, c))));
+  const bonus = state === "valid" ? result.points - words.reduce((sum, w) => sum + w.points, 0) : 0;
+  return html`<section class="draft-review" data-state=${state} role="status" aria-live="polite" aria-atomic="true">
+    <div class="draft-verdict">
+      <span class="draft-mark" aria-hidden="true">${badge}</span>
+      <strong>${title}</strong>
+      ${state === "valid" && html`<strong class="draft-total">${result.points} pts</strong>`}
+    </div>
+    ${reason && html`<p class="draft-reason">${reason}</p>`}
+    ${words.length > 0 && html`<div class="draft-details">
+      <div class="draft-words" aria-label="Formed words">${[...rejected, ...allowed].map((w, i) => html`
+        <span key=${i} class=${"draft-word" + (w.valid ? "" : " is-invalid")}>
+          ${w.word}${w.valid && words.length > 1 && html`<small> ${w.points}</small>`}
+          ${!w.valid && html`<small aria-label="invalid"> ×</small>`}
+        </span>`)}
+        ${bonus > 0 && html`<span class="draft-bonus">Bingo +${bonus}</span>`}
+      </div>
+      ${state === "valid" && personalBest != null && html`<small class="draft-best">Your best this game · ${personalBest}</small>`}
+    </div>`}
+  </section>`;
 }
 
 function isActive(game) {
@@ -1466,7 +1453,7 @@ function Results({ game }) {
         );
       }),
     ),
-    html`<a class="button" href="/games/new">New game</a> <a class="button ghost" href="/">Home</a>`,
+    html`<a class="button" href="/games/new">New game</a>`,
   ]);
 }
 
@@ -1512,54 +1499,6 @@ function JoinForm({ gameId }) {
     <p class="muted">An open seat is waiting. Join to play.</p>
     <button type="submit" class="button">Join game</button>
   </form>`;
-}
-
-// The "your other games" panel. Polls /api/my-games so the your-turn flags stay
-// fresh while you play, and excludes the game currently being viewed.
-function OtherGames({ gameId }) {
-  const [games, setGames] = useState(null);
-  useEffect(() => {
-    let active = true;
-    async function load() {
-      try {
-        const res = await fetch("/api/my-games");
-        if (!res.ok) return;
-        const data = await res.json();
-        if (active) {
-          const others = data.filter((g) => g.id !== gameId && g.status !== "finished");
-          const nowTurn = new Set(others.filter((g) => g.your_turn).map((g) => g.id));
-          setTurnAffordanceSource("other-games", nowTurn.size);
-          setGames(data);
-        }
-      } catch {
-        /* transient network error; keep the last list */
-      }
-    }
-    load();
-    const timer = setInterval(load, 5000);
-    return () => {
-      active = false;
-      setTurnAffordanceSource("other-games", 0);
-      clearInterval(timer);
-    };
-  }, []);
-
-  if (!games) return null;
-  const others = games.filter((g) => g.id !== gameId && g.status !== "finished");
-  if (!others.length) return null;
-  return html`<div class="other-games">
-    <h2>Your other games</h2>
-    <ul class="other-games-list">
-      ${others.map(
-        (g) => html`<li key=${g.id} class=${g.your_turn ? "your-turn" : ""}>
-          <a href=${`/games/${g.id}`}>${g.players.join(" vs ")}</a>
-          ${g.your_turn
-            ? html`<span class="badge badge-turn">your turn</span>`
-            : html`<span class="muted">${g.status}</span>`}
-        </li>`,
-      )}
-    </ul>
-  </div>`;
 }
 
 // -- Browser notifications --------------------------------------------------
@@ -1618,6 +1557,7 @@ async function ensurePushNotifications({ prompt = false } = {}) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(subscription.toJSON()),
     });
+    if (save.ok) window.dispatchEvent(new CustomEvent("scrabble-push-subscription", {detail: subscription.endpoint}));
     return save.ok ? "enabled" : "error";
   })();
 
@@ -1720,7 +1660,7 @@ function shortScoreName(seat) {
   return name;
 }
 
-function renderHeaderScores(game, pendingScore) {
+function renderHeaderScores(game) {
   const nav = document.querySelector(".nav");
   if (!nav) return;
   const links = nav.querySelector(".nav-links");
@@ -1759,13 +1699,6 @@ function renderHeaderScores(game, pendingScore) {
     value.textContent = String(seat.score);
     item.append(name, value);
     strip.append(item);
-  }
-  if (pendingScore != null) {
-    const pending = document.createElement("span");
-    pending.className = "header-pending-score";
-    pending.title = "score for placed tiles";
-    pending.textContent = `+${pendingScore}`;
-    strip.append(pending);
   }
 }
 
@@ -1862,7 +1795,17 @@ function App({ gameId, initial, autoZoom }) {
   const yourTurn = isYourTurn(game);
   const seated = game.your_seat !== null && game.your_seat !== undefined;
   const hasOpenSeat = game.seats.some((s) => s.open);
-  const pendingScore = pending.length ? previewScore(game, pending) : null;
+  const draftVersion = chatDraftVersion(game);
+  const placements = playPlacements(yourTurn && mode === "place" ? pending : []);
+  const preview = usePlayPreview(gameId, draftVersion, placements);
+  const canSubmit = yourTurn && !busy && (preview?.state === "valid" || preview?.state === "unavailable");
+  const personalBest = useMemo(() => {
+    let best = null;
+    for (const move of game.moves) {
+      if (move.kind === "play" && move.seat === game.your_seat) best = Math.max(best ?? 0, move.points);
+    }
+    return best;
+  }, [game.moves, game.your_seat]);
 
   const lastPlaySet = useMemo(() => {
     const s = new Set();
@@ -1871,6 +1814,19 @@ function App({ gameId, initial, autoZoom }) {
     }
     return s;
   }, [game]);
+
+  useEffect(() => {
+    const nav = document.querySelector(".nav-links");
+    function update() {
+      setTurnAffordanceSource("other-games", Number(nav.dataset.otherTurns) || 0);
+    }
+    update();
+    nav.addEventListener("otherturns", update);
+    return () => {
+      nav.removeEventListener("otherturns", update);
+      setTurnAffordanceSource("other-games", 0);
+    };
+  }, []);
 
   useEffect(() => {
     setTurnAffordanceSource("current-game", yourTurn ? 1 : 0);
@@ -1899,15 +1855,31 @@ function App({ gameId, initial, autoZoom }) {
   useEffect(() => {
     let revision = 0;
     let stateRequest;
-    const es = new EventSource(`/games/${gameId}/events`);
-    es.addEventListener("message", (e) => {
-      try {
-        revision++;
-        setGame(JSON.parse(e.data));
-      } catch {
-        /* ignore malformed event */
+    let stream;
+    function startStream() {
+      if (document.hidden || stream) return;
+      stream = new EventSource(`/games/${gameId}/events`);
+      stream.addEventListener("message", event => {
+        try {
+          const next = JSON.parse(event.data);
+          revision++;
+          setGame(next);
+        } catch { /* Ignore malformed events. */ }
+      });
+    }
+    function pause() {
+      stream?.close();
+      stream = null;
+      stateRequest?.abort();
+    }
+    function visibility() {
+      if (document.hidden) pause();
+      else {
+        startStream();
+        void refetchIfVisible();
       }
-    });
+    }
+    startStream();
     async function refetchIfVisible() {
       if (document.hidden || stateRequest) return;
       const atStart = revision;
@@ -1924,22 +1896,22 @@ function App({ gameId, initial, autoZoom }) {
       finally { clearTimeout(timer); stateRequest = null; }
     }
     const timer = setInterval(refetchIfVisible, 15000);
-    document.addEventListener("visibilitychange", refetchIfVisible);
+    document.addEventListener("visibilitychange", visibility);
+    window.addEventListener("pagehide", pause);
     window.addEventListener("online", refetchIfVisible);
-    window.addEventListener("pageshow", refetchIfVisible);
+    window.addEventListener("pageshow", visibility);
     window.addEventListener("focus", refetchIfVisible);
     return () => {
       clearInterval(timer);
-      stateRequest?.abort();
-      es.close();
-      document.removeEventListener("visibilitychange", refetchIfVisible);
+      pause();
+      document.removeEventListener("visibilitychange", visibility);
+      window.removeEventListener("pagehide", pause);
       window.removeEventListener("online", refetchIfVisible);
-      window.removeEventListener("pageshow", refetchIfVisible);
+      window.removeEventListener("pageshow", visibility);
       window.removeEventListener("focus", refetchIfVisible);
     };
   }, [gameId]);
 
-  const draftVersion = chatDraftVersion(game);
   const previousVersion = useRef(draftVersion);
   useLayoutEffect(() => {
     if (previousVersion.current === draftVersion) return;
@@ -1949,16 +1921,12 @@ function App({ gameId, initial, autoZoom }) {
   }, [draftVersion]);
 
   useLayoutEffect(() => {
-    const link = document.querySelector(".game-chat-link");
-    const save = () => {
-      try {
-        sessionStorage.setItem("chat-board-draft:" + gameId, JSON.stringify({
-          version: draftVersion, pending, cursor, rackOrder,
-        }));
-      } catch { /* Storage may be disabled by the browser. */ }
-    };
-    link?.addEventListener("click", save);
-    return () => link?.removeEventListener("click", save);
+    // Checkpoint every edit. A phone can suspend the page before pagehide runs.
+    try {
+      sessionStorage.setItem("chat-board-draft:" + gameId, JSON.stringify({
+        version: draftVersion, pending, cursor, rackOrder,
+      }));
+    } catch { /* Storage may be disabled by the browser. */ }
   }, [gameId, draftVersion, pending, cursor, rackOrder]);
 
   // Reset the rack display order whenever the underlying rack changes.
@@ -1973,9 +1941,9 @@ function App({ gameId, initial, autoZoom }) {
   // Inject live scores into the nav; the server-rendered nav is outside the
   // Preact island.
   useEffect(() => {
-    renderHeaderScores(game, pendingScore);
+    renderHeaderScores(game);
     return () => document.querySelector(".header-scores")?.remove();
-  }, [game, pendingScore]);
+  }, [game]);
 
   const usedRackIds = new Set(pending.map((p) => p.rackId));
   const rackTiles = game.your_rack || [];
@@ -2411,15 +2379,8 @@ function App({ gameId, initial, autoZoom }) {
       setError("Place at least one tile first.");
       return;
     }
-    postMove({
-      kind: "play",
-      placements: pending.map((p) => ({
-        row: p.row,
-        col: p.col,
-        letter: p.letter,
-        is_blank: p.isBlank,
-      })),
-    });
+    if (!canSubmit) return;
+    postMove({kind: "play", placements});
   }
 
   function submitExchange() {
@@ -2564,10 +2525,10 @@ function App({ gameId, initial, autoZoom }) {
       h("button", {
         type: "button",
         class: "button play-button",
-        disabled: busy || !placementLegal(game, pending),
+        disabled: !canSubmit,
         title: "Shortcut: Enter",
         onClick: submitPlay,
-      }, busy ? "Playing…" : `Play ${pendingScore != null ? pendingScore : ""}`.trim()),
+      }, busy ? "Playing…" : "Play"),
     ];
   } else {
     controlButtons = [
@@ -2619,9 +2580,7 @@ function App({ gameId, initial, autoZoom }) {
           ? html`<p class="muted exchange-tip">Tap tiles to swap, then press Swap.</p>`
           : null,
         error ? html`<p class="move-error" role="alert">${error}</p>` : null,
-        pending.length === 7 && pendingScore != null
-          ? html`<p class="bingo-note">Bingo! +50 bonus included</p>`
-          : null,
+        preview ? html`<${DraftReview} preview=${preview} personalBest=${personalBest}/>` : null,
         controls,
         hintsEnabled && hintResult
           ? html`<p class="hint-result" role="status" aria-live="polite">${hintResult}</p>`
@@ -2664,7 +2623,7 @@ function App({ gameId, initial, autoZoom }) {
           onClick: abandonGame,
         }, "Abandon game")
       : null}
-    <${OtherGames} gameId=${gameId} />
+
   </aside>`;
   const playColumn = h("div", { class: "play-column" }, [
     boardWrap,
@@ -2726,19 +2685,6 @@ function boot() {
     mount,
   );
 
-  // Prevent pull-to-refresh and rubber-band scrolling on iOS (mobile only)
-  document.addEventListener(
-    "touchmove",
-    (e) => {
-      if (window.innerWidth > 480) return;
-      if (e.target.closest(".modal-backdrop")) return;
-      if (e.target.closest(".sidebar")) return;
-      // Allow pinch-to-zoom on the board
-      if (e.touches.length >= 2 && e.target.closest(".board")) return;
-      e.preventDefault();
-    },
-    { passive: false },
-  );
 }
 
 boot();

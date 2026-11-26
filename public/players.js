@@ -39,6 +39,17 @@ function getPlayers() {
   return directoryRequest;
 }
 
+function playerAvatar(avatarId) {
+  const id = Number.isInteger(avatarId) && avatarId >= 0 && avatarId < 50 ? avatarId : 0;
+  const icon = document.createElement("span");
+  icon.className = "player-avatar";
+  icon.setAttribute("aria-hidden", "true");
+  icon.dataset.avatarId = String(id);
+  icon.style.setProperty("--avatar-col", String(id % 10));
+  icon.style.setProperty("--avatar-row", String(Math.floor(id / 10)));
+  return icon;
+}
+
 function playerPicker(label, choose, otherSeats) {
   const panel = document.createElement("details");
   panel.className = "player-picker";
@@ -58,6 +69,8 @@ function playerPicker(label, choose, otherSeats) {
 
   function select(player) {
     selected = player;
+    summary.querySelector(".player-avatar")?.remove();
+    if (player) summary.prepend(playerAvatar(player.avatar_id));
     title.textContent = player ? player.name : "Choose a player";
     action.textContent = player ? "Change" : "";
     choose(player);
@@ -73,13 +86,9 @@ function playerPicker(label, choose, otherSeats) {
       const button = document.createElement("button");
       button.type = "button";
       button.className = "picker-choice";
-      const initial = document.createElement("span");
-      initial.className = "picker-initial";
-      initial.setAttribute("aria-hidden", "true");
-      initial.textContent = [...player.name][0]?.toUpperCase() || "·";
       const name = document.createElement("span");
       name.textContent = counts.get(player.name) > 1 ? player.name + " · " + player.id.slice(0, 6) : player.name;
-      button.append(initial, name);
+      button.append(playerAvatar(player.avatar_id), name);
       if (player.id === selected?.id) button.setAttribute("aria-current", "true");
       button.addEventListener("click", () => {
         select(player);
@@ -161,24 +170,37 @@ setupInstallGuide(document.querySelector("#install-guide"));
 const inbox = document.querySelector("#invitations");
 if (inbox || document.querySelector(".back-link")) {
   const alertLink = document.createElement("a");
-  alertLink.className = "invitation-alert button";
-  alertLink.href = "/#invitations";
-  alertLink.textContent = "View game invitations";
-  const chatHeading = document.querySelector(".chat-heading");
+  const nav = document.querySelector(".nav-links");
+  const board = location.pathname.match(/^\/games\/([a-f0-9-]{36})(?:\/|$)/i)?.[1];
+  alertLink.className = "nav-notice";
+  alertLink.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 9a6 6 0 0 0-12 0c0 5-2 7-3 8h18c-1-1-3-3-3-8ZM10 20a2.5 2.5 0 0 0 4 0"/></svg><span class="notice-count" aria-hidden="true"></span>';
+  function showNotice(invitations, turns) {
+    const count = invitations + turns;
+    if (!count) { alertLink.remove(); return; }
+    const label = invitations ? "View game invitations" : "View games waiting for your turn";
+    alertLink.href = invitations ? "/#invitations" : "/#my-games";
+    alertLink.title = label;
+    alertLink.setAttribute("aria-label", label);
+    alertLink.lastElementChild.textContent = count > 9 ? "9+" : String(count);
+    if (!alertLink.isConnected) nav.append(alertLink);
+  }
   const previous = new Map();
   let stream;
   let request;
   let queued = false;
   let stopped = false;
   let failures = 0;
-  const connection = document.createElement("a");
-  connection.className = "activity-reconnect";
-  connection.href = location.href;
-  connection.textContent = "Updates paused · Reconnect";
+  const connection = document.createElement("button");
+  connection.type = "button";
+  connection.className = "nav-notice";
+  connection.title = "Reconnect game updates";
+  connection.setAttribute("aria-label", connection.title);
+  connection.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4v5h5M3.5 9a8.5 8.5 0 1 1 .5 7"/></svg>';
+  connection.addEventListener("click", () => stopped ? location.reload() : resume());
   function reportFailure() {
     if (++failures >= 2 && !connection.isConnected) {
-      if (chatHeading) chatHeading.append(connection);
-      else document.querySelector(".nav").after(connection);
+      alertLink.remove();
+      nav.append(connection);
     }
   }
   function replace(id, html) {
@@ -199,6 +221,7 @@ if (inbox || document.querySelector(".back-link")) {
     try {
       const response = await fetch(inbox ? "/api/activity" : "/api/invitations", {
         cache: "no-store", signal: controller.signal,
+        headers: board ? {"x-scrabble-current-game": board} : {},
       });
       if (response.status === 401) {
         failures = 2;
@@ -220,13 +243,28 @@ if (inbox || document.querySelector(".back-link")) {
         replace("open-games", activity.open_games);
       } else {
         const html = await response.text();
-        const away = response.headers.get("x-scrabble-away");
-        if (away !== null && document.querySelector(".away-settings")) {
-          window.dispatchEvent(new CustomEvent("scrabble-away", {detail: away === "true"}));
+        const chat = document.querySelector(".game-chat-link");
+        const unread = response.headers.get("x-scrabble-chat-unread");
+        if (chat && (unread === "true" || unread === "false") && chat.dataset.unread !== unread) {
+          chat.dataset.unread = unread;
+          chat.setAttribute("aria-label", unread === "true" ? "Chat, unread messages" : "Chat");
+          const status = document.querySelector(".chat-unread-status");
+          if (status) status.textContent = unread === "true" ? "Unread game chat messages" : "";
         }
-        const showAlert = html && away !== "true";
-        if (showAlert && !alertLink.isConnected) (chatHeading || document.body).append(alertLink);
-        else if (!showAlert) alertLink.remove();
+        const away = response.headers.get("x-scrabble-away");
+        const state = response.headers.get("x-scrabble-away-state");
+        if (state !== null && document.querySelector(".away-settings")) {
+          window.dispatchEvent(new CustomEvent("scrabble-away", {detail: state}));
+        }
+        // Counts stay in the navigation bar while the board and rack retain their space.
+        const inviteCount = (html.match(/class="invite-row"/g) || []).length || (html.trim() ? 1 : 0);
+        const turns = Number(response.headers.get("x-scrabble-other-turns")) || 0;
+        if (board && nav.dataset.otherTurns !== String(turns)) {
+          nav.dataset.otherTurns = String(turns);
+          nav.dispatchEvent(new Event("otherturns"));
+        }
+        if (away === "true") alertLink.remove();
+        else showNotice(inviteCount, turns);
       }
       failures = 0;
       connection.remove();

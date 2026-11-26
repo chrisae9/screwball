@@ -62,7 +62,7 @@ test("incoming invitations and reconnect notices leave the phone chat composer a
     ? {status: 503, body: "Temporarily unavailable"}
     : {contentType: "text/html", body: "<section>Game invitation</section>"}));
   await page.goto(path);
-  const heading = page.locator(".chat-heading");
+  const heading = page.getByRole("navigation");
   await expect(heading.getByRole("link", {name: "View game invitations"})).toBeVisible();
   paused = true;
   const failPoll = () => Promise.all([
@@ -71,7 +71,7 @@ test("incoming invitations and reconnect notices leave the phone chat composer a
   ]);
   await failPoll();
   await failPoll();
-  await expect(heading.getByRole("link", {name: /Reconnect/})).toBeVisible();
+  await expect(heading.getByRole("button", {name: /Reconnect/})).toBeVisible();
   const send = page.getByRole("button", {name:"Send", exact:true});
   expect(await send.evaluate(button => {
     const rect = button.getBoundingClientRect();

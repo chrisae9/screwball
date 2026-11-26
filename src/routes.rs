@@ -39,10 +39,10 @@ pub async fn index(State(state): State<AppState>, MaybeUser(user): MaybeUser) ->
     let Some(user) = user else {
         return Html(render::home_page(None, None));
     };
-    let name = state.users.get(user).await.map(|u| u.display_name);
+    let profile = state.users.get(user).await;
     Html(render::home_page(
         Some(dashboard(&state, user).await),
-        name.as_deref(),
+        profile.as_ref(),
     ))
 }
 
@@ -76,7 +76,7 @@ async fn dashboard(state: &AppState, user: Uuid) -> render::HomeActivity {
             .users
             .get(user)
             .await
-            .is_some_and(|u| u.settings.active_away_until(chrono::Utc::now()).is_some()),
+            .is_some_and(|u| u.settings.away_state(chrono::Utc::now()).is_active()),
     )
 }
 
@@ -136,7 +136,10 @@ pub async fn settings_page(
         .await
         .map(|u| u.settings)
         .unwrap_or_default();
-    Ok(Html(render::settings_page(&settings)))
+    Ok(Html(render::settings_page(
+        &settings,
+        settings.avatar(user),
+    )))
 }
 
 pub async fn service_worker() -> Response {
@@ -176,6 +179,28 @@ pub struct SettingsForm {
     auto_zoom: Option<String>,
 }
 
+#[derive(Deserialize)]
+pub struct AvatarForm {
+    avatar_id: u8,
+}
+
+pub async fn update_avatar(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+    Form(form): Form<AvatarForm>,
+) -> Result<Redirect, AppError> {
+    if form.avatar_id >= crate::avatars::COUNT {
+        return Err(AppError::bad_request("Choose a player icon from the list."));
+    }
+    state
+        .users
+        .update(user, |profile| {
+            profile.settings.avatar_id = Some(form.avatar_id)
+        })
+        .await?;
+    Ok(Redirect::to("/settings"))
+}
+
 pub async fn update_settings(
     State(state): State<AppState>,
     AuthUser(user): AuthUser,
@@ -190,7 +215,7 @@ pub async fn update_settings(
 
 #[derive(Deserialize)]
 pub struct AwayForm {
-    hours: u8,
+    hours: String,
 }
 
 pub async fn update_away(
@@ -198,16 +223,22 @@ pub async fn update_away(
     AuthUser(user): AuthUser,
     Form(form): Form<AwayForm>,
 ) -> Result<Redirect, AppError> {
-    let until = match form.hours {
-        0 => None,
-        hours @ (1 | 4 | 8 | 24) => {
-            Some(chrono::Utc::now() + chrono::Duration::hours(i64::from(hours)))
+    use crate::users::AwayState;
+    let pause = match form.hours.as_str() {
+        "0" => AwayState::Off,
+        "indefinite" => AwayState::Indefinite,
+        duration => {
+            let hours = duration
+                .parse::<i64>()
+                .ok()
+                .filter(|hours| matches!(hours, 1 | 4 | 8 | 24 | 48 | 168))
+                .ok_or_else(|| AppError::bad_request("Choose a listed pause duration."))?;
+            AwayState::Until(chrono::Utc::now() + chrono::Duration::hours(hours))
         }
-        _ => return Err(AppError::bad_request("Choose a listed pause duration.")),
     };
     state
         .users
-        .update(user, |u| u.settings.away_until = until)
+        .update(user, |u| u.settings.set_away(pause))
         .await?;
     Ok(Redirect::to("/settings"))
 }
@@ -334,10 +365,6 @@ pub async fn game_page(
         serde_json::to_string(&state.dict.two_letter_words()).map_err(AppError::internal)?;
     let grandpa_two_letter =
         serde_json::to_string(crate::models::GRANDPA_TWO_LETTER).map_err(AppError::internal)?;
-    let other_games = match user {
-        Some(user) => my_game_summaries(&state, user, Some(id)).await,
-        None => Vec::new(),
-    };
     let auto_zoom = match user {
         Some(u) => state
             .users
@@ -352,25 +379,17 @@ pub async fn game_page(
         &initial,
         &two_letter,
         &grandpa_two_letter,
-        &other_games,
         user.is_some(),
         auto_zoom,
     )))
 }
 
-/// The viewer's games sorted your-turn-first then most-recently-moved-first,
-/// optionally excluding one game id, each flagged with whether it is the
-/// viewer's turn.
-async fn my_game_summaries(
-    state: &AppState,
-    user: Uuid,
-    exclude: Option<Uuid>,
-) -> Vec<GameSummary> {
+/// The viewer's games in the order used by Next game.
+fn my_game_summaries(state: &AppState, user: Uuid) -> Vec<GameSummary> {
     let mut summaries: Vec<GameSummary> = state
         .store
         .snapshots()
         .iter()
-        .filter(|game| Some(game.id) != exclude)
         .filter_map(|game| GameSummary::for_viewer(game, user))
         .collect();
     summaries.sort_by(|a, b| {
@@ -381,14 +400,14 @@ async fn my_game_summaries(
     summaries
 }
 
-/// JSON list of the signed-in viewer's games, used by the game page to keep the
-/// "your other games" panel (and its your-turn flags) fresh while you play.
+/// JSON list of the signed-in viewer's games, used to find the
+/// next playable match available from the board.
 pub async fn my_games(
     State(state): State<AppState>,
     MaybeUser(user): MaybeUser,
 ) -> Json<Vec<GameSummary>> {
     let summaries = match user {
-        Some(user) => my_game_summaries(&state, user, None).await,
+        Some(user) => my_game_summaries(&state, user),
         None => Vec::new(),
     };
     Json(summaries)
@@ -441,21 +460,21 @@ pub async fn push_debug_status(
 }
 
 pub async fn push_test(State(state): State<AppState>, ApiAuthUser(user): ApiAuthUser) -> Response {
-    if !state.push.is_enabled() {
-        return api_error(
-            StatusCode::UNPROCESSABLE_ENTITY,
-            "web push is not configured",
-        );
-    }
     if state
         .users
         .get(user)
         .await
-        .is_some_and(|u| u.settings.active_away_until(chrono::Utc::now()).is_some())
+        .is_some_and(|u| u.settings.away_state(chrono::Utc::now()).is_active())
     {
         return api_error(
             StatusCode::CONFLICT,
             "Notifications are paused in Away mode.",
+        );
+    }
+    if !state.push.is_enabled() {
+        return api_error(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "web push is not configured",
         );
     }
     let report = state.push.send_test(&state.users, user).await;
@@ -658,6 +677,64 @@ pub struct PlacementReq {
     is_blank: bool,
 }
 
+#[derive(Deserialize)]
+pub struct DraftRequest {
+    placements: Vec<PlacementReq>,
+}
+
+pub async fn preview_move(
+    State(state): State<AppState>,
+    ApiAuthUser(user): ApiAuthUser,
+    Path(id): Path<Uuid>,
+    request: Result<Json<DraftRequest>, axum::extract::rejection::JsonRejection>,
+) -> Response {
+    let Some(game) = state.store.snapshot(id) else {
+        return move_error(StatusCode::NOT_FOUND, "game not found");
+    };
+    let index = match player_on_turn(&game, user) {
+        Ok(index) => index,
+        Err(err) => return move_error(err.status, &err.message),
+    };
+    let request = match request {
+        Ok(Json(request)) => request,
+        Err(err) => return move_error(err.status(), &err.body_text()),
+    };
+    let invalid = |reason: String| {
+        Json(json!({ "valid": false, "points": null, "words": [], "error": reason }))
+            .into_response()
+    };
+    if request.placements.len() > game.seats[index].rack.len() {
+        return invalid(MoveError::TilesNotInRack.to_string());
+    }
+    let placements = match request
+        .placements
+        .into_iter()
+        .map(parse_placement)
+        .collect::<Result<Vec<_>, _>>()
+    {
+        Ok(placements) => placements,
+        Err(error) => return invalid(error),
+    };
+    match game::evaluate_play(
+        &game.board,
+        &game.seats[index].rack,
+        &state.dict,
+        &placements,
+        game.august_mode,
+        game.mimi_mode,
+        game.word_rule_for(false),
+    ) {
+        Ok((play, error)) => Json(json!({
+            "valid": error.is_none(),
+            "points": error.is_none().then_some(play.points),
+            "words": play.words,
+            "error": error.map(|e| e.to_string()),
+        }))
+        .into_response(),
+        Err(error) => invalid(error.to_string()),
+    }
+}
+
 pub async fn submit_move(
     State(state): State<AppState>,
     ApiAuthUser(user): ApiAuthUser,
@@ -757,12 +834,7 @@ struct ApiMoveError {
     message: String,
 }
 
-fn apply_player_move(
-    game: &mut Game,
-    dict: &crate::dict::Dictionary,
-    user: Uuid,
-    kind: MoveKind,
-) -> Result<GameView, ApiMoveError> {
+fn player_on_turn(game: &Game, user: Uuid) -> Result<usize, ApiMoveError> {
     if game.status != GameStatus::Active {
         return Err(ApiMoveError {
             status: StatusCode::UNPROCESSABLE_ENTITY,
@@ -787,6 +859,16 @@ fn apply_player_move(
         });
     }
 
+    Ok(seat_index)
+}
+
+fn apply_player_move(
+    game: &mut Game,
+    dict: &crate::dict::Dictionary,
+    user: Uuid,
+    kind: MoveKind,
+) -> Result<GameView, ApiMoveError> {
+    let seat_index = player_on_turn(game, user)?;
     let mut rng = rand::thread_rng();
     game::apply_move(game, dict, seat_index, kind, &mut rng).map_err(|err| ApiMoveError {
         status: StatusCode::UNPROCESSABLE_ENTITY,

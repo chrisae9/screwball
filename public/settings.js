@@ -9,7 +9,7 @@ localizeAwayTime();
 let updatingAway = false;
 window.addEventListener("scrabble-away", async event => {
   const panel = document.querySelector(".away-settings");
-  if (!panel || updatingAway || event.detail === !!panel.querySelector("#away-until")) return;
+  if (!panel || updatingAway || event.detail === panel.dataset.awayState) return;
   // The server controls expiry. Update only this card, preserving other pending form edits.
   updatingAway = true;
   try {
@@ -98,6 +98,7 @@ async function enableNotifications() {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(subscription.toJSON()),
   });
+  window.dispatchEvent(new CustomEvent("scrabble-push-subscription", {detail: subscription.endpoint}));
 }
 
 const homePanel = document.getElementById("phone-alerts");
@@ -142,7 +143,7 @@ async function refreshStatus(prompt = false) {
   try {
     // Re-save the current device even when its browser already has a subscription.
     await enableNotifications();
-    setStatus(document.getElementById("away-until") ? "This device is registered for notifications." : "Notifications are on.");
+    setStatus(document.querySelector('.away-settings:not([data-away-state="off"])') ? "This device is registered for notifications." : "Notifications are on.");
     buttonEl.hidden = true;
     if (homePanel) homePanel.hidden = true;
   } catch {
@@ -160,3 +161,11 @@ document.addEventListener("visibilitychange", () => refreshStatus());
 window.addEventListener("online", () => refreshStatus());
 window.addEventListener("pageshow", event => { if (event.persisted) refreshStatus(); });
 refreshStatus();
+
+
+const avatarPicker = document.querySelector(".avatar-picker");
+avatarPicker?.addEventListener("change", event => {
+  if (event.target.name === "avatar_id") {
+    avatarPicker.querySelector(".avatar-selected").value = event.target.getAttribute("aria-label");
+  }
+});

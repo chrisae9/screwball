@@ -128,6 +128,7 @@ async function enableNotifications() {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(subscription.toJSON()),
   });
+  window.dispatchEvent(new CustomEvent("scrabble-push-subscription", {detail: subscription.endpoint}));
   return {
     ok: true,
     endpoint: subscription.endpoint,
@@ -164,6 +165,7 @@ async function unsubscribe() {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ endpoint: subscription.endpoint }),
   });
+  window.dispatchEvent(new CustomEvent("scrabble-push-subscription", {detail: null}));
   const removed = await subscription.unsubscribe();
   return { ok: true, browser_unsubscribed: removed };
 }

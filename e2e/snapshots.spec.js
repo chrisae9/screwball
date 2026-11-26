@@ -43,7 +43,7 @@ test("new game page", async ({ page }) => {
   // Other tests register players concurrently. Keep the screenshot roster stable.
   const names = ["Alex", "Casey", "Jamie", "Morgan", "Riley", "Sam", "Taylor"];
   await page.route("**/api/players", route => route.fulfill({
-    json: names.map((name, index) => ({id: String(index), name})),
+    json: names.map((name, index) => ({id: String(index), name, avatar_id:index * 7})),
   }));
   await signIn(page, "scott");
   await page.goto("/games/new");

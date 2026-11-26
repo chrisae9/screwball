@@ -86,11 +86,12 @@ impl fmt::Display for MoveError {
 
 impl std::error::Error for MoveError {}
 
-/// A formed word: the cells it spans, the resulting string, and its score.
-#[derive(Clone, Debug, PartialEq, Eq)]
+/// A word formed on the board, its score and whether this game allows it.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
 pub struct ScoredWord {
     pub word: String,
     pub points: u32,
+    pub valid: bool,
 }
 
 /// Result of validating a [`MoveKind::Play`] without mutating game state.
@@ -168,6 +169,25 @@ pub fn validate_play(
     mimi_mode: bool,
     rule: WordRule,
 ) -> Result<ScoredPlay, MoveError> {
+    let (play, word_error) =
+        evaluate_play(board, rack, dict, placements, august_mode, mimi_mode, rule)?;
+    match word_error {
+        Some(error) => Err(error),
+        None => Ok(play),
+    }
+}
+
+/// A geometrically valid draft can still contain invalid words. Keep those
+/// words and their crosses for the preview, and the same rejection for submit.
+pub(crate) fn evaluate_play(
+    board: &Board,
+    rack: &[Tile],
+    dict: &Dictionary,
+    placements: &[Placement],
+    august_mode: bool,
+    mimi_mode: bool,
+    rule: WordRule,
+) -> Result<(ScoredPlay, Option<MoveError>), MoveError> {
     if placements.is_empty() {
         return Err(MoveError::EmptyPlay);
     }
@@ -293,28 +313,34 @@ pub fn validate_play(
         let word = word_string(&scratch, cells);
         // A word must be in the dictionary first; only then does the rule apply,
         // so we never report a non-word as merely "disallowed".
-        if !rule.is_known_word(&word, dict) {
+        let valid = if !rule.is_known_word(&word, dict) {
             invalid.push(word.clone());
-            continue;
-        }
-        if !rule.allows(&word) {
-            disallowed.push(word);
-            continue;
-        }
+            false
+        } else if !rule.allows(&word) {
+            disallowed.push(word.clone());
+            false
+        } else {
+            true
+        };
         let points = score_word(&scratch, cells, &placed_set);
         total += points;
-        scored.push(ScoredWord { word, points });
+        scored.push(ScoredWord {
+            word,
+            points,
+            valid,
+        });
     }
-    if !disallowed.is_empty() {
+    let word_error = if !disallowed.is_empty() {
         disallowed.sort();
         disallowed.dedup();
-        return Err(MoveError::DisallowedWords(disallowed));
-    }
-    if !invalid.is_empty() {
+        Some(MoveError::DisallowedWords(disallowed))
+    } else if !invalid.is_empty() {
         invalid.sort();
         invalid.dedup();
-        return Err(MoveError::InvalidWords(invalid));
-    }
+        Some(MoveError::InvalidWords(invalid))
+    } else {
+        None
+    };
 
     // A bingo is worth 50: either all seven tiles were placed, or, in August
     // Mode, the player played AUGUST. For a multi-tile play that means AUGUST is
@@ -340,11 +366,14 @@ pub fn validate_play(
         })
         .collect();
 
-    Ok(ScoredPlay {
-        placed,
-        words: scored,
-        points: total,
-    })
+    Ok((
+        ScoredPlay {
+            placed,
+            words: scored,
+            points: total,
+        },
+        word_error,
+    ))
 }
 
 fn check_rack_has_tiles(rack: &[Tile], placements: &[Placement]) -> Result<(), MoveError> {

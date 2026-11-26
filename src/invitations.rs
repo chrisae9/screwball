@@ -25,6 +25,7 @@ pub struct Search {
 pub struct Player {
     id: Uuid,
     name: String,
+    avatar_id: u8,
 }
 
 pub async fn search(
@@ -51,12 +52,16 @@ pub async fn search(
             .search_players(user, &query.q)
             .await
             .into_iter()
-            .filter(|(id, _)| {
+            .filter(|(id, _, _)| {
                 game.as_ref().is_none_or(|game| {
                     !is_user_seated(game, *id) && !game.seats.iter().any(|seat| seat.invited(*id))
                 })
             })
-            .map(|(id, name)| Player { id, name })
+            .map(|(id, name, avatar_id)| Player {
+                id,
+                name,
+                avatar_id,
+            })
             .collect(),
     ))
 }
@@ -187,17 +192,44 @@ pub fn inbox_html<'a>(games: impl Iterator<Item = &'a Game>, user: Uuid) -> Stri
 pub async fn inbox(
     State(state): State<AppState>,
     ApiAuthUser(user): ApiAuthUser,
+    headers: axum::http::HeaderMap,
 ) -> impl axum::response::IntoResponse {
     let away = state
         .users
         .get(user)
         .await
-        .is_some_and(|u| u.settings.active_away_until(chrono::Utc::now()).is_some());
+        .map(|u| u.settings.away_state(chrono::Utc::now()))
+        .unwrap_or_default();
+    let games = state.store.snapshots();
+    let current = headers
+        .get("x-scrabble-current-game")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| Uuid::parse_str(v).ok());
+    let turn_count = games
+        .iter()
+        .filter(|g| Some(g.id) != current && render::is_current_turn(g, user))
+        .count();
+    let unread = match current {
+        Some(id) => match crate::chat::has_unread(&state, id, user).await {
+            Ok(value) => {
+                if value {
+                    "true"
+                } else {
+                    "false"
+                }
+            }
+            Err(crate::error::AppError::NotFound(_)) => "false",
+            Err(_) => "unknown",
+        },
+        None => "false",
+    };
     (
-        [("x-scrabble-away", if away { "true" } else { "false" })],
-        Html(inbox_html(
-            state.store.snapshots().iter().map(AsRef::as_ref),
-            user,
-        )),
+        [
+            ("x-scrabble-other-turns", turn_count.to_string()),
+            ("x-scrabble-chat-unread", unread.to_string()),
+            ("x-scrabble-away", away.is_active().to_string()),
+            ("x-scrabble-away-state", away.token()),
+        ],
+        Html(inbox_html(games.iter().map(AsRef::as_ref), user)),
     )
 }

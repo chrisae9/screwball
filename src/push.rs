@@ -1,4 +1,4 @@
-use std::env;
+use std::{env, sync::Arc, time::Instant};
 
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde::Serialize;
@@ -11,6 +11,7 @@ use web_push::{
 use crate::{
     error::AppError,
     models::{Game, GameStatus, SeatKind},
+    presence::Foreground,
     users::{PushSubscription, UserStore},
 };
 
@@ -19,6 +20,7 @@ const LOCAL_DEV_VAPID_PRIVATE_KEY: &str = "GOUXfxqzqhlIXF7mcuoriQnHt7rmodZJQvRK1
 #[derive(Clone)]
 pub struct PushService {
     inner: Option<PushServiceInner>,
+    pub foreground: Arc<Foreground>,
 }
 
 #[derive(Clone)]
@@ -71,6 +73,7 @@ impl PushService {
         let client = IsahcWebPushClient::new().map_err(AppError::internal)?;
 
         Ok(Self {
+            foreground: Arc::default(),
             inner: Some(PushServiceInner {
                 vapid,
                 public_key,
@@ -81,7 +84,10 @@ impl PushService {
     }
 
     pub fn disabled() -> Self {
-        Self { inner: None }
+        Self {
+            inner: None,
+            foreground: Arc::default(),
+        }
     }
 
     pub fn is_enabled(&self) -> bool {
@@ -143,11 +149,7 @@ impl PushService {
         let Some(user) = users.get(user_id).await else {
             return;
         };
-        if user
-            .settings
-            .active_away_until(chrono::Utc::now())
-            .is_some()
-        {
+        if user.settings.away_state(chrono::Utc::now()).is_active() {
             return;
         }
         let payload = match serde_json::to_vec(&notification) {
@@ -163,6 +165,13 @@ impl PushService {
             tracing::info!(%game_id, %user_id, "no registered device for game notification");
         }
         for subscription in user.push_subscriptions {
+            if self
+                .foreground
+                .visible(user_id, &subscription.endpoint, Instant::now())
+            {
+                continue;
+            }
+
             match send_one(inner, &subscription, &topic, &payload).await {
                 Ok(()) => {
                     tracing::info!(%game_id, %user_id, "push provider accepted game notification")
