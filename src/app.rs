@@ -87,22 +87,23 @@ pub fn router(state: AppState) -> Router {
 }
 
 // Enabled only behind the header-clearing Authentik gateway and its ingress policy.
-async fn authentik_player(State(state): State<AppState>, mut req: Request, next: Next) -> Response {
+async fn authentik_player(State(state): State<AppState>, req: Request, next: Next) -> Response {
     use crate::users::{User, UserSettings};
     use axum::http::{Method, StatusCode};
     use axum::response::{IntoResponse, Redirect};
 
-    let path = req.uri().path();
+    let (mut parts, body) = req.into_parts();
+    let path = parts.uri.path();
     if path == "/healthcheck" {
-        return next.run(req).await;
+        return next.run(Request::from_parts(parts, body)).await;
     }
-    let header = |name: &str| req.headers().get(name).and_then(|h| h.to_str().ok());
+    let header = |name: &str| parts.headers.get(name).and_then(|h| h.to_str().ok());
     let Some(uid) = header("x-authentik-uid").filter(|s| {
         s.len() >= 16 && s.len() <= 128 && s.bytes().all(|b| b.is_ascii_hexdigit() || b == b'-')
     }) else {
         return StatusCode::UNAUTHORIZED.into_response();
     };
-    if !matches!(*req.method(), Method::GET | Method::HEAD | Method::OPTIONS)
+    if !matches!(parts.method, Method::GET | Method::HEAD | Method::OPTIONS)
         && (header("sec-fetch-site") == Some("cross-site")
             || header("origin")
                 .is_some_and(|origin| Some(origin) != env::var("RP_ORIGIN").ok().as_deref()))
@@ -145,9 +146,8 @@ async fn authentik_player(State(state): State<AppState>, mut req: Request, next:
             },
         }
     };
-    req.extensions_mut()
-        .insert(crate::session::AuthUser(player));
-    next.run(req).await
+    parts.extensions.insert(crate::session::AuthUser(player));
+    next.run(Request::from_parts(parts, body)).await
 }
 
 /// Log every request's method, path, status, signed-in username, and wall-clock
