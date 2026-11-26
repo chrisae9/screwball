@@ -46,3 +46,25 @@ test("a new dashboard refreshes its whole page once across releases", async ({pa
   expect(activity.games).not.toContain('rel="stylesheet"');
   expect(documents).toBe(2);
 });
+
+test("live match updates keep keyboard focus on the same game", async ({page}) => {
+  await page.request.post("/auth/login/begin", {data:{username:"shelli"}});
+  const response = await page.request.get("/api/activity", {headers:{"x-scrabble-dashboard":"test"}});
+  const activity = await response.json();
+  let update = 0;
+  await page.route("**/api/activity", route => {
+    // A score or relative time changing causes the list to be rendered again.
+    const games = activity.games + '<span hidden data-update="' + update + '"></span>';
+    return route.fulfill({json:{...activity, games}});
+  });
+  await page.goto("/");
+  const games = page.locator("#my-games");
+  await expect(games.locator('[data-update="0"]')).toBeAttached();
+  const card = games.locator(".match-card").first();
+  await card.focus();
+  update++;
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect(games.locator('[data-update="1"]')).toBeAttached();
+  await expect(card).toBeFocused({timeout:1000});
+  await page.unrouteAll({behavior:"wait"});
+});

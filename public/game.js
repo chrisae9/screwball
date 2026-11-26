@@ -1772,6 +1772,21 @@ function recoverChatDraft(game) {
 
 function App({ gameId, initial, autoZoom }) {
   const [game, setGame] = useState(initial);
+  const latestGame = useRef(initial);
+
+  function acceptGame(next, observed = latestGame.current) {
+    const current = latestGame.current;
+    // The move log is append-only. Abandonment can finish a match without
+    // adding a move. Neither transition can be undone by a delayed reply.
+    if (next.moves.length < current.moves.length ||
+        (current.status === "Finished" && next.status !== "Finished")) return;
+    // Seat/invitation/hint changes can share the same turn and log length.
+    // Keep the newer observation when a request overlapped one of those updates.
+    if (observed !== current && next.moves.length === current.moves.length &&
+        next.status === current.status) return;
+    latestGame.current = next;
+    setGame(next);
+  }
   const [chatDraft] = useState(() => recoverChatDraft(initial));
   const [pending, setPending] = useState(() => chatDraft?.pending ?? []);
   const [selected, setSelected] = useState(null);
@@ -1847,23 +1862,22 @@ function App({ gameId, initial, autoZoom }) {
   // updates hints_remaining right after requesting one.
   useEffect(() => {
     setHintResult(null);
-  }, [game.turn]);
+  }, [game.turn, game.moves.length]);
 
   // Live updates via Server-Sent Events: the server pushes a fresh state on
   // every change instead of us polling. EventSource auto-reconnects on drop;
   // a visibility refetch covers a stream that stalled while backgrounded.
   useEffect(() => {
-    let revision = 0;
     let stateRequest;
     let stream;
     function startStream() {
       if (document.hidden || stream) return;
-      stream = new EventSource(`/games/${gameId}/events`);
-      stream.addEventListener("message", event => {
+      const source = new EventSource(`/games/${gameId}/events`);
+      stream = source;
+      source.addEventListener("message", event => {
+        if (source !== stream) return;
         try {
-          const next = JSON.parse(event.data);
-          revision++;
-          setGame(next);
+          acceptGame(JSON.parse(event.data));
         } catch { /* Ignore malformed events. */ }
       });
     }
@@ -1882,7 +1896,7 @@ function App({ gameId, initial, autoZoom }) {
     startStream();
     async function refetchIfVisible() {
       if (document.hidden || stateRequest) return;
-      const atStart = revision;
+      const atStart = latestGame.current;
       const controller = new AbortController();
       stateRequest = controller;
       const timer = setTimeout(() => controller.abort(), 8000);
@@ -1890,7 +1904,7 @@ function App({ gameId, initial, autoZoom }) {
         const res = await fetch(`/games/${gameId}/state`, {cache:"no-store", signal:controller.signal});
         if (res.ok) {
           const next = await res.json();
-          if (atStart === revision && !controller.signal.aborted) setGame(next);
+          if (!controller.signal.aborted) acceptGame(next, atStart);
         }
       } catch { /* The next foreground check retries. */ }
       finally { clearTimeout(timer); stateRequest = null; }
@@ -2304,6 +2318,10 @@ function App({ gameId, initial, autoZoom }) {
     }
   }
 
+  function setMoveError(message) {
+    if (chatDraftVersion(latestGame.current) === draftVersion) setError(message);
+  }
+
   async function postMove(body) {
     setBusy(true);
     setError(null);
@@ -2322,24 +2340,22 @@ function App({ gameId, initial, autoZoom }) {
       }
       if (!res.ok) {
         if (res.status === 401) {
-          setError(
+          setMoveError(
             (data && data.error) ||
               "Your session expired — reload the page and sign in again.",
           );
         } else {
-          setError((data && data.error) || "Move rejected.");
+          setMoveError((data && data.error) || "Move rejected.");
         }
         return;
       }
       if (!data) {
-        setError("Unexpected response — try again.");
+        setMoveError("Unexpected response — try again.");
         return;
       }
-      setGame(data);
-      setHintResult(null);
-      reset();
+      acceptGame(data, game);
     } catch {
-      setError("Network error — try again.");
+      setMoveError("Network error — try again.");
     } finally {
       setBusy(false);
     }
@@ -2360,15 +2376,12 @@ function App({ gameId, initial, autoZoom }) {
         data = null;
       }
       if (!res.ok) {
-        setError((data && data.error) || "Could not abandon the game.");
+        setMoveError((data && data.error) || "Could not abandon the game.");
         return;
       }
-      if (data) {
-        setGame(data);
-        reset();
-      }
+      if (data) acceptGame(data, game);
     } catch {
-      setError("Network error — try again.");
+      setMoveError("Network error — try again.");
     } finally {
       setBusy(false);
     }

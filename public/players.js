@@ -208,10 +208,18 @@ if (inbox || document.querySelector(".back-link")) {
     if (previous.get(id) === html) return;
     previous.set(id, html);
     const element = document.getElementById(id);
+    const focused = document.activeElement;
+    let focusSelector;
+    if (element.contains(focused)) {
+      if (focused.matches("a[href]")) focusSelector = "a[href=" + CSS.escape(focused.getAttribute("href")) + "]";
+      else if (focused.matches("button") && focused.form) focusSelector = "form[action=" + CSS.escape(focused.form.getAttribute("action")) + "] button";
+      else if (focused.matches("summary")) focusSelector = "summary";
+    }
     const finishedExpanded = element.querySelector("details[open]") != null;
     element.innerHTML = html;
     const details = element.querySelector("details");
     if (finishedExpanded && details) details.open = true;
+    if (focusSelector) element.querySelector(focusSelector)?.focus({preventScroll:true});
   }
   async function refresh() {
     if (document.hidden || stopped) return;

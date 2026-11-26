@@ -16,6 +16,36 @@ let last = 0;
 let polling = false;
 let retry;
 let readError = false;
+const draftKey = "chat-draft:" + room.dataset.chatViewer + ":" + room.dataset.chatGame;
+const retryHint = "Couldn’t confirm delivery. Tap Send to retry.";
+
+function saveDraft() {
+  try {
+    if (!input.value) {
+      sessionStorage.removeItem(draftKey);
+      return;
+    }
+    sessionStorage.setItem(draftKey, JSON.stringify({text: input.value, retry}));
+  } catch { /* The composer still works when browser storage is unavailable. */ }
+}
+
+function restoreDraft() {
+  try {
+    const draft = JSON.parse(sessionStorage.getItem(draftKey));
+    input.value = typeof draft?.text === "string" ? draft.text : "";
+    retry = typeof draft?.retry?.id === "string" && typeof draft.retry.text === "string"
+      ? draft.retry : null;
+    status.textContent = retry?.text === input.value.trim() ? retryHint : "";
+  } catch { /* Leave the live composer alone if storage is unavailable. */ }
+}
+
+restoreDraft();
+window.addEventListener("pageshow", event => { if (event.persisted) restoreDraft(); });
+input.addEventListener("input", () => {
+  if (!input.value) retry = null;
+  if (status.textContent === retryHint && retry?.text !== input.value.trim()) status.textContent = "";
+  saveDraft();
+});
 
 // A fetched page can contain offscreen messages or skip earlier pages. Only
 // acknowledge rows that reached the visible conversation on this device.
@@ -153,20 +183,28 @@ form.addEventListener("submit", async event => {
   const text = input.value.trim();
   if (!text || send.disabled) return;
   if (retry?.text !== text) retry = { id: crypto.randomUUID(), text };
+  const attempt = retry;
+  // A request may commit after the phone leaves this page. Persist its id
+  // before sending so reopening the chat can safely retry the same message.
+  saveDraft();
   send.disabled = true;
+  readError = false;
   status.textContent = "";
   try {
     const response = await fetch(url, {
       method: "POST", headers: {"Content-Type": "application/json"},
-      body: JSON.stringify(retry), signal: AbortSignal.timeout(10000),
+      body: JSON.stringify(attempt), signal: AbortSignal.timeout(10000),
     });
     if (!response.ok) throw new Error("Unable to send.");
-    if (input.value.trim() === text) input.value = "";
-    retry = null;
+    if (retry?.id === attempt.id) {
+      if (input.value.trim() === text) input.value = "";
+      retry = null;
+      saveDraft();
+    }
     history.scrollTop = history.scrollHeight;
     await refresh();
   } catch {
-    status.textContent = "Couldn’t confirm delivery. Tap Send to retry.";
+    if (retry?.id === attempt.id && input.value.trim() === text) status.textContent = retryHint;
   } finally {
     send.disabled = false;
   }

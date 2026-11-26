@@ -258,7 +258,7 @@ pub async fn page(
         .map(|s| s.name.as_str())
         .collect::<Vec<_>>()
         .join(" · ");
-    Ok(Html(render::chat_page(id, &names)))
+    Ok(Html(render::chat_page(id, viewer, &names)))
 }
 
 #[derive(Deserialize)]

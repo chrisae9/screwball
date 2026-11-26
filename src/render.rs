@@ -872,14 +872,14 @@ pub fn game_page(
     layout_with_head(&title, &body, head, "game-page", &nav_actions)
 }
 
-pub fn chat_page(id: Uuid, participants: &str) -> String {
+pub fn chat_page(id: Uuid, viewer: Uuid, participants: &str) -> String {
     let head = format!(
         r#"<link rel="stylesheet" href="{}"><script type="module" src="{}"></script>"#,
         asset("/public/chat.css"),
         asset("/public/chat.js")
     );
     let body = format!(
-        r#"<section class="game-chat" data-chat-game="{id}" aria-labelledby="chat-title">
+        r#"<section class="game-chat" data-chat-game="{id}" data-chat-viewer="{viewer}" aria-labelledby="chat-title">
   <header class="chat-heading"><h1 id="chat-title">Game chat</h1><p>{names}</p></header>
   <div class="chat-history" role="region" aria-label="Conversation" tabindex="0">
     <button type="button" class="chat-older" hidden>Earlier messages</button>
