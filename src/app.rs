@@ -45,6 +45,7 @@ impl FromRef<AppState> for Key {
 pub fn router(state: AppState) -> Router {
     let router = Router::new()
         .route("/", get(routes::index))
+        .route("/leaderboard", get(crate::leaderboard::page))
         .route("/debug/notifications", get(routes::notification_debug_page))
         .route("/debug/touch", get(routes::touch_debug_page))
         .route("/sw.js", get(routes::service_worker))
@@ -58,6 +59,7 @@ pub fn router(state: AppState) -> Router {
             "/settings",
             get(routes::settings_page).post(routes::update_settings),
         )
+        .route("/settings/away", post(routes::update_away))
         .route("/games", post(routes::create_game))
         .route("/games/new", get(routes::new_game_page))
         .route("/api/players", get(crate::invitations::search))
@@ -76,6 +78,11 @@ pub fn router(state: AppState) -> Router {
         .route("/api/push/unsubscribe", post(routes::push_unsubscribe))
         .route("/api/push/test", post(routes::push_test))
         .route("/games/{id}", get(routes::game_page))
+        .route("/games/{id}/chat", get(crate::chat::page))
+        .route(
+            "/api/games/{id}/chat",
+            get(crate::chat::history).post(crate::chat::send),
+        )
         .route("/games/{id}/join", post(routes::join_game))
         .route("/games/{id}/state", get(routes::game_state))
         .route("/games/{id}/events", get(routes::game_events))
@@ -196,8 +203,10 @@ async fn log_request(State(state): State<AppState>, request: Request, next: Next
 async fn cache_control(request: Request, next: Next) -> Response {
     let path = request.uri().path();
     let is_asset = path.starts_with("/public/") && !INSTALL_ASSETS.contains(&path);
-    let private =
-        path.starts_with("/api/") || path.ends_with("/events") || path.ends_with("/state");
+    let private = path.starts_with("/api/")
+        || path.ends_with("/events")
+        || path.ends_with("/state")
+        || path.ends_with("/chat");
     let mut response = next.run(request).await;
     let value = if private {
         "private, no-store"
@@ -311,6 +320,8 @@ fn asset_version() -> String {
         "public/scrabble-512.png",
         "public/app.css",
         "public/game.js",
+        "public/chat.js",
+        "public/chat.css",
         "public/players.js",
         "public/settings.js",
         "public/auth.js",

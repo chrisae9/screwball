@@ -72,6 +72,11 @@ async fn dashboard(state: &AppState, user: Uuid) -> render::HomeActivity {
         &joinable,
         user,
         crate::invitations::inbox_html(games.iter().map(AsRef::as_ref), user),
+        state
+            .users
+            .get(user)
+            .await
+            .is_some_and(|u| u.settings.active_away_until(chrono::Utc::now()).is_some()),
     )
 }
 
@@ -125,13 +130,13 @@ pub async fn settings_page(
     State(state): State<AppState>,
     AuthUser(user): AuthUser,
 ) -> Result<Html<String>, AppError> {
-    let auto_zoom = state
+    let settings = state
         .users
         .get(user)
         .await
-        .map(|u| u.settings.auto_zoom)
-        .unwrap_or(false);
-    Ok(Html(render::settings_page(auto_zoom)))
+        .map(|u| u.settings)
+        .unwrap_or_default();
+    Ok(Html(render::settings_page(&settings)))
 }
 
 pub async fn service_worker() -> Response {
@@ -183,6 +188,30 @@ pub async fn update_settings(
     Ok(Redirect::to("/settings"))
 }
 
+#[derive(Deserialize)]
+pub struct AwayForm {
+    hours: u8,
+}
+
+pub async fn update_away(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+    Form(form): Form<AwayForm>,
+) -> Result<Redirect, AppError> {
+    let until = match form.hours {
+        0 => None,
+        hours @ (1 | 4 | 8 | 24) => {
+            Some(chrono::Utc::now() + chrono::Duration::hours(i64::from(hours)))
+        }
+        _ => return Err(AppError::bad_request("Choose a listed pause duration.")),
+    };
+    state
+        .users
+        .update(user, |u| u.settings.away_until = until)
+        .await?;
+    Ok(Redirect::to("/settings"))
+}
+
 pub async fn create_game(
     State(state): State<AppState>,
     AuthUser(user): AuthUser,
@@ -213,7 +242,7 @@ pub async fn create_game(
             }
             let recipient = state
                 .users
-                .get(target)
+                .invitable_player(target)
                 .await
                 .ok_or_else(|| AppError::not_found("Player not found"))?;
             invitations.push((specs.len(), target));
@@ -416,6 +445,17 @@ pub async fn push_test(State(state): State<AppState>, ApiAuthUser(user): ApiAuth
         return api_error(
             StatusCode::UNPROCESSABLE_ENTITY,
             "web push is not configured",
+        );
+    }
+    if state
+        .users
+        .get(user)
+        .await
+        .is_some_and(|u| u.settings.active_away_until(chrono::Utc::now()).is_some())
+    {
+        return api_error(
+            StatusCode::CONFLICT,
+            "Notifications are paused in Away mode.",
         );
     }
     let report = state.push.send_test(&state.users, user).await;

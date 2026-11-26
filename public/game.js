@@ -1518,7 +1518,6 @@ function JoinForm({ gameId }) {
 // fresh while you play, and excludes the game currently being viewed.
 function OtherGames({ gameId }) {
   const [games, setGames] = useState(null);
-  const prevTurnIds = useRef(null);
   useEffect(() => {
     let active = true;
     async function load() {
@@ -1529,17 +1528,6 @@ function OtherGames({ gameId }) {
         if (active) {
           const others = data.filter((g) => g.id !== gameId && g.status !== "finished");
           const nowTurn = new Set(others.filter((g) => g.your_turn).map((g) => g.id));
-          if (prevTurnIds.current !== null) {
-            for (const g of others) {
-              if (g.your_turn && !prevTurnIds.current.has(g.id)) {
-                notifyTurn(
-                  `${g.players.join(" vs ")}`,
-                  `/games/${g.id}`,
-                );
-              }
-            }
-          }
-          prevTurnIds.current = nowTurn;
           setTurnAffordanceSource("other-games", nowTurn.size);
           setGames(data);
         }
@@ -1638,19 +1626,6 @@ async function ensurePushNotifications({ prompt = false } = {}) {
   } finally {
     pushSetupPromise = null;
   }
-}
-
-function notifyTurn(body, url) {
-  if (!("Notification" in window) || Notification.permission !== "granted") return;
-  if (document.visibilityState === "visible") return;
-  // Mobile browsers require persistent notifications through the registered worker.
-  navigator.serviceWorker?.getRegistration().then(registration => registration?.showNotification("Your turn!", {
-    body: body || "It's your turn in Scrabble",
-    icon: "/public/apple-touch-icon.png",
-    tag: "turn-" + url.split("/").pop(),
-    data: {url},
-  })).catch(() => {});
-
 }
 
 const baseFavicon = document.querySelector('link[rel="icon"]').href;
@@ -1845,19 +1820,37 @@ function constrainCursor(row, col, desiredDir, pend) {
   return null;
 }
 
+// The board and chat have separate URLs. Keep an unfinished move in this
+// tab only, and restore it only if the same seat, turn and rack still apply.
+function chatDraftVersion(game) {
+  return [game.your_seat, game.status, game.turn, game.moves.length, rackSignature(game)].join(":");
+}
+
+function recoverChatDraft(game) {
+  const key = "chat-board-draft:" + game.id;
+  try {
+    const draft = JSON.parse(sessionStorage.getItem(key));
+    sessionStorage.removeItem(key);
+    return draft?.version === chatDraftVersion(game) ? draft : null;
+  } catch {
+    return null;
+  }
+}
+
 function App({ gameId, initial, autoZoom }) {
   const [game, setGame] = useState(initial);
-  const [pending, setPending] = useState([]);
+  const [chatDraft] = useState(() => recoverChatDraft(initial));
+  const [pending, setPending] = useState(() => chatDraft?.pending ?? []);
   const [selected, setSelected] = useState(null);
   const [hoverLetter, setHoverLetter] = useState(null);
   const [mode, setMode] = useState("place");
   const [exchange, setExchange] = useState(() => new Set());
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
-  const [cursor, setCursor] = useState(null);
+  const [cursor, setCursor] = useState(() => chatDraft?.cursor ?? null);
   const [blankPrompt, setBlankPrompt] = useState(null);
   const [rackOrder, setRackOrder] = useState(() =>
-    (initial.your_rack || []).map((_, i) => i),
+    chatDraft?.rackOrder ?? (initial.your_rack || []).map((_, i) => i),
   );
 
   const [hintResult, setHintResult] = useState(null);
@@ -1900,40 +1893,17 @@ function App({ gameId, initial, autoZoom }) {
     setHintResult(null);
   }, [game.turn]);
 
-  // Track the last-rendered turn so a pushed state can detect the transition
-  // *into* your turn (for the notification) without re-notifying repeatedly.
-  const prevTurnRef = useRef(yourTurn);
-  useEffect(() => {
-    prevTurnRef.current = yourTurn;
-  }, [yourTurn]);
-
   // Live updates via Server-Sent Events: the server pushes a fresh state on
   // every change instead of us polling. EventSource auto-reconnects on drop;
   // a visibility refetch covers a stream that stalled while backgrounded.
   useEffect(() => {
-    const applyState = (next) => {
-      if (
-        isYourTurn(next) &&
-        !prevTurnRef.current &&
-        document.visibilityState !== "visible"
-      ) {
-        const who = next.moves.length
-          ? next.seats[next.moves[next.moves.length - 1].seat]?.name
-          : null;
-        notifyTurn(
-          who ? `${who} just played` : "It's your turn in Scrabble",
-          `/games/${gameId}`,
-        );
-      }
-      setGame(next);
-    };
     let revision = 0;
     let stateRequest;
     const es = new EventSource(`/games/${gameId}/events`);
     es.addEventListener("message", (e) => {
       try {
         revision++;
-        applyState(JSON.parse(e.data));
+        setGame(JSON.parse(e.data));
       } catch {
         /* ignore malformed event */
       }
@@ -1948,7 +1918,7 @@ function App({ gameId, initial, autoZoom }) {
         const res = await fetch(`/games/${gameId}/state`, {cache:"no-store", signal:controller.signal});
         if (res.ok) {
           const next = await res.json();
-          if (atStart === revision && !controller.signal.aborted) applyState(next);
+          if (atStart === revision && !controller.signal.aborted) setGame(next);
         }
       } catch { /* The next foreground check retries. */ }
       finally { clearTimeout(timer); stateRequest = null; }
@@ -1969,9 +1939,34 @@ function App({ gameId, initial, autoZoom }) {
     };
   }, [gameId]);
 
+  const draftVersion = chatDraftVersion(game);
+  const previousVersion = useRef(draftVersion);
+  useLayoutEffect(() => {
+    if (previousVersion.current === draftVersion) return;
+    previousVersion.current = draftVersion;
+    reset();
+    setBlankPrompt(null);
+  }, [draftVersion]);
+
+  useLayoutEffect(() => {
+    const link = document.querySelector(".game-chat-link");
+    const save = () => {
+      try {
+        sessionStorage.setItem("chat-board-draft:" + gameId, JSON.stringify({
+          version: draftVersion, pending, cursor, rackOrder,
+        }));
+      } catch { /* Storage may be disabled by the browser. */ }
+    };
+    link?.addEventListener("click", save);
+    return () => link?.removeEventListener("click", save);
+  }, [gameId, draftVersion, pending, cursor, rackOrder]);
+
   // Reset the rack display order whenever the underlying rack changes.
   const sig = rackSignature(game);
+  const lastRack = useRef(sig);
   useEffect(() => {
+    if (lastRack.current === sig) return;
+    lastRack.current = sig;
     setRackOrder((game.your_rack || []).map((_, i) => i));
   }, [sig]);
 

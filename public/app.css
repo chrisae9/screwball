@@ -1526,6 +1526,8 @@ section.card + section.card {
   width: 100%;
 }
 
+.game-options > summary { cursor: pointer; padding: .65rem 0; min-height: 44px; font-weight: 600; }
+
 .form-options {
   display: flex;
   flex-direction: column;
@@ -1779,7 +1781,7 @@ section.card + section.card {
   letter-spacing: 0;
 }
 
-.back-link, .invite-game-link {
+.back-link, .invite-game-link, .game-chat-link {
   display: inline-flex;
   align-items: center;
   gap: .3rem;
@@ -1793,9 +1795,90 @@ section.card + section.card {
 #invitations:empty, [hidden] { display: none !important; }
 #install-guide summary { cursor: pointer; font-weight: 650; }
 #install-guide li + li { margin-top: .45rem; }
-.invite-actions, .player-results { display: flex; flex-wrap: wrap; gap: .5rem; }
-.player-results:not(:empty) { padding: .5rem 0; }
-.player-picker small { display: block; }
+.invite-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+[data-invite-form] { max-width: 32rem; }
+.new-game-form select[name^="seat"], .new-game-form > button, [data-invite-form] > button {
+  min-height: 44px;
+}
+[data-invite-form] > button:disabled { opacity: .55; }
+.player-picker {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: .7rem;
+  background: var(--surface);
+}
+.player-picker summary {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  min-height: 44px;
+  padding: .5rem .8rem;
+  cursor: pointer;
+  list-style: none;
+}
+.player-picker summary::-webkit-details-marker { display: none; }
+.player-picker summary::after {
+  content: "";
+  flex: none;
+  width: .45rem;
+  height: .45rem;
+  border: solid var(--muted);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+.player-picker[open] summary::after { transform: rotate(225deg); }
+.picker-title { flex: 1; overflow-wrap: anywhere; font-weight: 650; }
+.picker-action { font-size: .85rem; color: var(--accent); }
+.picker-content { padding: 0 .65rem .4rem; }
+.form .picker-content input {
+  width: 100%;
+  min-height: 44px;
+  padding-inline: .7rem;
+  font-size: 1rem;
+  background: var(--bg);
+  color: var(--ink);
+}
+.picker-roster {
+  list-style: none;
+  margin: .3rem 0 0;
+  padding: 0;
+  max-height: min(12.5rem, 30vh);
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+}
+.picker-choice {
+  display: flex;
+  align-items: center;
+  gap: .65rem;
+  width: 100%;
+  min-height: 44px;
+  padding: .35rem .4rem;
+  border: 0;
+  border-radius: .35rem;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.picker-choice:hover, .picker-choice[aria-current] { background: var(--bg); }
+.picker-choice:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.picker-initial {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 1.85rem;
+  height: 1.85rem;
+  border: 1px solid var(--tile-edge);
+  border-radius: .3rem;
+  background: var(--tile);
+  color: var(--tile-ink);
+  font-weight: 650;
+}
+.picker-status { padding: .35rem; font-size: .9rem; color: var(--muted); }
+.picker-status:empty { display: none; }
+.picker-status button { min-height: 44px; font: inherit; color: var(--accent); background: none; border: 0; text-decoration: underline; cursor: pointer; }
 .invite-row + .invite-row { border-top: 1px solid var(--line); margin-top: 1rem; }
 .invitation-alert { position: fixed; z-index: 20; bottom: max(1rem, env(safe-area-inset-bottom)); right: 1rem; }
 @media (max-width: 480px) {
@@ -1804,3 +1887,63 @@ section.card + section.card {
 }
 #open-games:empty { display: none; }
 .activity-reconnect { display: block; text-align: center; padding: .4rem; background: var(--surface); color: var(--ink); }
+
+.leaderboard {
+  max-width: 40rem;
+  margin-inline: auto;
+}
+.leaderboard h1 { margin-bottom: 0.5rem; }
+.leaderboard-rules, .leaderboard-record, .leaderboard-empty p {
+  color: var(--muted);
+  line-height: 1.5;
+}
+.leaderboard-rules { margin: 0 0 1.25rem; }
+.leaderboard table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-variant-numeric: tabular-nums;
+}
+.leaderboard th, .leaderboard td {
+  padding: 0.8rem 0.25rem;
+  border-top: 1px solid var(--line);
+}
+.leaderboard thead th {
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.leaderboard th:first-child, .leaderboard td:first-child {
+  width: 3.5rem;
+  padding-left: 0;
+}
+.leaderboard th:last-child, .leaderboard td:last-child {
+  width: 3.5rem;
+  padding-right: 0;
+  text-align: right;
+}
+.leaderboard th[scope="row"] { overflow-wrap: anywhere; }
+.leaderboard-rank, .leaderboard-points { font-weight: 700; }
+.leaderboard-points { color: var(--accent); }
+.leaderboard-record { display: block; font-size: 0.8rem; font-weight: 400; }
+.leaderboard-empty { padding: 1.25rem 0 0; border-top: 1px solid var(--line); }
+.leaderboard-empty h2 { margin: 0; font-size: 1.15rem; }
+.leaderboard-empty p { margin: 0.35rem 0 0.65rem; }
+.leaderboard-empty .button { min-height: 44px; }
+
+@media (max-width: 640px) {
+  .account {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.5rem;
+  }
+  .account p { grid-column: 1 / -1; margin-bottom: 0.25rem; overflow-wrap: anywhere; }
+  .account .new-game-link { margin-left: 0; }
+  .account .button { display: grid; place-items: center; min-height: 44px; width: 100%; margin: 0; }
+}
+
+.game-chat-link { min-width: 44px; justify-content: center; }
+
+.away-controls { display: flex; align-items: center; flex-wrap: wrap; gap: .65rem; }
+.away-controls select { min-height: 44px; font: inherit; padding: .35rem .5rem; }
+.away-settings button { min-height: 44px; }

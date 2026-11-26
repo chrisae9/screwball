@@ -27,6 +27,7 @@ struct Entry {
 /// on that game's own `write_lock`; different games (and all reads) proceed
 /// concurrently.
 pub struct GameStore {
+    pub chats: crate::chat::ChatStore,
     games: Mutex<HashMap<Uuid, Entry>>,
     dir: PathBuf,
     /// Fires the id of a game whenever it changes, so SSE subscribers can push
@@ -38,7 +39,9 @@ impl GameStore {
     /// Load all persisted games under `<data_root>/games`, creating the
     /// directory if needed. Invalid files are skipped with a warning.
     pub async fn load(data_root: impl Into<PathBuf>) -> Result<Self, AppError> {
-        let dir = data_root.into().join("games");
+        let root = data_root.into();
+        let chats = crate::chat::ChatStore::open(root.join("chats")).await?;
+        let dir = root.join("games");
         tokio::fs::create_dir_all(&dir)
             .await
             .map_err(AppError::internal)?;
@@ -68,6 +71,7 @@ impl GameStore {
         }
 
         Ok(Self {
+            chats,
             games: Mutex::new(games),
             dir,
             changes: broadcast::channel(256).0,
@@ -88,11 +92,15 @@ impl GameStore {
     }
 
     pub async fn get(&self, id: Uuid) -> Option<Game> {
+        self.snapshot(id).map(|game| (*game).clone())
+    }
+
+    pub fn snapshot(&self, id: Uuid) -> Option<Arc<Game>> {
         self.games
             .lock()
             .unwrap()
             .get(&id)
-            .map(|entry| (*entry.game).clone())
+            .map(|entry| entry.game.clone())
     }
 
     /// Games sorted newest-first, for listing.

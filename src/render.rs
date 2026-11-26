@@ -65,6 +65,17 @@ fn layout_with_head(
     body_class: &str,
     nav_actions: &str,
 ) -> String {
+    layout_with_back(title, body, head_extra, body_class, nav_actions, None)
+}
+
+fn layout_with_back(
+    title: &str,
+    body: &str,
+    head_extra: &str,
+    body_class: &str,
+    nav_actions: &str,
+    board: Option<Uuid>,
+) -> String {
     format!(
         r#"<!doctype html>
 <html lang="en">
@@ -96,7 +107,11 @@ fn layout_with_head(
         css = asset("/public/app.css"),
         favicon = asset("/public/favicon.svg"),
         players_js = asset("/public/players.js"),
-        back = if title == "Scrabble" {
+        back = if let Some(id) = board {
+            format!(
+                r#"<a class="back-link" href="/games/{id}" aria-label="Back to board"><span aria-hidden="true">‹</span> Board</a>"#
+            )
+        } else if title == "Scrabble" {
             format!(
                 r#"<a class="brand" href="/" aria-label="Scrabble home"><img class="brand-icon" src="{}" alt=""></a>"#,
                 asset("/public/favicon.svg")
@@ -129,6 +144,7 @@ pub fn error_page(title: &str, message: &str) -> String {
 
 #[derive(serde::Serialize)]
 pub struct HomeActivity {
+    pub away: bool,
     pub invitations: String,
     pub open_games: String,
     pub games: String,
@@ -139,6 +155,7 @@ pub fn home_activity(
     joinable_games: &[&Game],
     current: Uuid,
     invitations: String,
+    away: bool,
 ) -> HomeActivity {
     let list = if games.is_empty() {
         "<p class=\"muted\">No games yet. Create one to get started.</p>".to_string()
@@ -156,6 +173,7 @@ pub fn home_activity(
         )
     };
     HomeActivity {
+        away,
         games: list,
         open_games,
         invitations,
@@ -164,6 +182,7 @@ pub fn home_activity(
 
 pub fn home_page(activity: Option<HomeActivity>, display_name: Option<&str>) -> String {
     let Some(HomeActivity {
+        away,
         invitations,
         open_games,
         games: list,
@@ -189,6 +208,7 @@ pub fn home_page(activity: Option<HomeActivity>, display_name: Option<&str>) -> 
             r#"<section class="card account">
   <p class="muted">{greeting}</p>
   <a class="button new-game-link" href="/games/new">New game</a>
+  <a class="button button-secondary" href="/leaderboard">Leaderboard</a>
   <a class="button button-secondary" href="/settings">Settings</a>
   <form method="post" action="/auth/logout">
     <button type="submit" class="button button-secondary">Sign out</button>
@@ -196,7 +216,7 @@ pub fn home_page(activity: Option<HomeActivity>, display_name: Option<&str>) -> 
 </section>
 <section class="card" id="invitations" aria-live="polite">{invitations}</section>
 <details id="install-guide" class="card" hidden><summary>Install Scrabble on your phone</summary><ol></ol></details>
-<aside class="card notification-controls" id="phone-alerts" hidden>
+<aside class="card notification-controls" id="phone-alerts" data-away="{away}" hidden>
   <strong>Phone alerts</strong><p class="muted" id="notif-status" role="status"></p>
   <button type="button" id="notif-enable" class="button" hidden>Enable notifications</button>
 </aside>
@@ -231,17 +251,35 @@ pub fn new_game_page() -> String {
 }
 
 pub fn invite_page(id: Uuid) -> String {
-    layout(
+    layout_with_back(
         "Invite a player — Scrabble",
         &format!(
             r#"<section class="card"><h1>Invite a player</h1>
-<form class="form" data-invite-form method="post" action="/games/{id}/invite"><input name="player" type="hidden">
+<form class="form" data-invite-form="{id}" method="post" action="/games/{id}/invite"><input name="player" type="hidden">
 <button class="button">Send invitation</button></form><p><a href="/games/{id}">Return to game</a></p></section>"#
         ),
+        "",
+        "",
+        "",
+        Some(id),
     )
 }
 
-pub fn settings_page(auto_zoom: bool) -> String {
+pub fn settings_page(settings: &crate::users::UserSettings) -> String {
+    let away = settings.active_away_until(chrono::Utc::now());
+    let away_control = if let Some(until) = away {
+        format!(
+            r#"<p>Notifications paused until <time id="away-until" datetime="{}">{}</time>.</p>
+<form method="post" action="/settings/away"><button class="button button-secondary" name="hours" value="0">Resume now</button></form>"#,
+            until.to_rfc3339(),
+            until.format("%b %e at %H:%M UTC")
+        )
+    } else {
+        r#"<form class="away-controls" method="post" action="/settings/away">
+<label for="away-hours">Pause for</label>
+<select id="away-hours" name="hours"><option value="1">1 hour</option><option value="4">4 hours</option><option value="8">8 hours</option><option value="24">24 hours</option></select>
+<button class="button button-secondary">Pause notifications</button></form>"#.to_string()
+    };
     layout_with_head(
         "Settings — Scrabble",
         &format!(
@@ -262,8 +300,13 @@ pub fn settings_page(auto_zoom: bool) -> String {
   <p class="muted" id="notif-status">Checking…</p>
   <button type="button" id="notif-enable" class="button button-secondary" hidden>Enable notifications</button>
 </section>
+<section class="card away-settings">
+  <h2>Away mode</h2>
+  <p class="muted">Pause invitation and turn alerts on all your devices. Your games will keep updating.</p>
+  {away_control}
+</section>
 <p class="muted"><a href="/">Back home</a></p>"#,
-            checked = if auto_zoom { " checked" } else { "" },
+            checked = if settings.auto_zoom { " checked" } else { "" },
         ),
         &format!(
             r#"<script type="module" src="{}" defer></script>"#,
@@ -450,6 +493,7 @@ fn new_game_form() -> String {
   <label>Seat 4
     <select name="seat4">{seat4}</select>
   </label>
+  <details class="game-options"><summary>Game options</summary>
   <div class="form-options">
     <div class="form-option-row">
       <label class="checkbox-label" for="john-mode">
@@ -523,6 +567,7 @@ fn new_game_form() -> String {
       </select>
     </label>
   </div>
+  </details>
   <button type="submit" class="button">Create game</button>
 </form>"#,
         seat2 = options(false).replace(
@@ -673,7 +718,7 @@ pub fn game_page(
         asset("/public/game.js")
     );
     let head = head.as_str();
-    let invite_link = if view.can_invite {
+    let mut nav_actions = if view.can_invite {
         format!(
             r#"<a class="invite-game-link" href="/games/{}/invite">Invite player</a>"#,
             view.id
@@ -681,6 +726,19 @@ pub fn game_page(
     } else {
         String::new()
     };
+    if view.your_seat.is_some()
+        && view
+            .seats
+            .iter()
+            .filter(|seat| seat.kind == "human")
+            .count()
+            > 1
+    {
+        nav_actions.push_str(&format!(
+            r#"<a class="game-chat-link" href="/games/{}/chat">Chat</a>"#,
+            view.id
+        ));
+    }
     let sign_in = if logged_in {
         String::new()
     } else {
@@ -722,7 +780,40 @@ pub fn game_page(
     } else {
         format!("{} — Scrabble", names.join(" vs "))
     };
-    layout_with_head(&title, &body, head, "game-page", &invite_link)
+    layout_with_head(&title, &body, head, "game-page", &nav_actions)
+}
+
+pub fn chat_page(id: Uuid, participants: &str) -> String {
+    let head = format!(
+        r#"<link rel="stylesheet" href="{}"><script type="module" src="{}"></script>"#,
+        asset("/public/chat.css"),
+        asset("/public/chat.js")
+    );
+    let body = format!(
+        r#"<section class="game-chat" data-chat-game="{id}" aria-labelledby="chat-title">
+  <header class="chat-heading"><h1 id="chat-title">Game chat</h1><p>{names}</p></header>
+  <div class="chat-history" role="region" aria-label="Conversation" tabindex="0">
+    <button type="button" class="chat-older" hidden>Earlier messages</button>
+    <p class="chat-intro">Loading messages…</p>
+    <ol class="chat-messages" aria-label="Messages" aria-live="polite" aria-relevant="additions"></ol>
+  </div>
+  <form class="chat-form">
+    <p class="chat-status" role="status" aria-live="polite"></p>
+    <label class="chat-label" for="chat-message">Message</label>
+    <textarea rows="1" id="chat-message" maxlength="500" placeholder="Message the players…" required></textarea>
+    <button type="submit">Send</button>
+  </form>
+</section>"#,
+        names = escape(participants)
+    );
+    layout_with_back(
+        "Game chat — Scrabble",
+        &body,
+        &head,
+        "chat-page",
+        "",
+        Some(id),
+    )
 }
 
 fn render_join_form(view: &GameView) -> String {

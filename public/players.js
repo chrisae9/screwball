@@ -19,87 +19,141 @@ function setupInstallGuide(guide) {
   standalone.addEventListener("change", () => { guide.hidden = standalone.matches; });
 }
 
-function playerPicker(container, labelText, onChoose) {
-  const label = document.createElement("label");
-  label.textContent = labelText;
-  const input = document.createElement("input");
-  input.type = "search";
-  input.placeholder = "Search by player name";
-  input.autocomplete = "off";
-  input.required = true;
-  label.append(input);
-  const results = document.createElement("div");
-  results.className = "player-results";
-  const status = document.createElement("small");
-  status.setAttribute("role", "status");
-  container.append(label, results, status);
-  let timer;
-  let generation = 0;
-  input.addEventListener("input", () => {
-    const version = ++generation;
-    clearTimeout(timer);
-    onChoose(null);
-    input.setCustomValidity("Select a player from the search results.");
-    results.replaceChildren();
-    const query = input.value.trim();
-    status.textContent = query.length < 2 ? "Enter at least two letters." : "Searching…";
-    if (query.length < 2) return;
-    timer = setTimeout(async () => {
-      try {
-        const response = await fetch("/api/players?q=" + encodeURIComponent(query));
-        if (!response.ok) throw new Error();
-        const players = await response.json();
-        if (version !== generation) return;
-        status.textContent = players.length ? "Choose a player." : "No matching players.";
-        for (const player of players) {
-          const choice = document.createElement("button");
-          choice.type = "button";
-          choice.className = "button button-secondary";
-          const ambiguous = players.some(p => p.id !== player.id && p.name === player.name);
-          choice.textContent = ambiguous ? player.name + " · " + player.id.slice(0, 6) : player.name;
-          choice.addEventListener("click", () => {
-            input.value = player.name;
-            input.setCustomValidity("");
-            onChoose(player);
-            results.replaceChildren();
-            status.textContent = player.name + " selected.";
-          });
-          results.append(choice);
-        }
-      } catch {
-        if (version === generation) status.textContent = "Search failed. Try typing the name again.";
-      }
-    }, 160);
-  });
+const inviteForm = document.querySelector("[data-invite-form]");
+let directoryRequest;
+let requestedAt = 0;
+
+function getPlayers() {
+  if (!directoryRequest || Date.now() - requestedAt > 30_000) {
+    requestedAt = Date.now();
+    const game = inviteForm?.dataset.inviteForm;
+    const url = "/api/players" + (game ? "?game=" + encodeURIComponent(game) : "");
+    directoryRequest = fetch(url, {cache: "no-store"}).then(response => {
+      if (!response.ok) throw new Error("Directory unavailable");
+      return response.json();
+    }).catch(error => {
+      directoryRequest = null;
+      throw error;
+    });
+  }
+  return directoryRequest;
 }
 
-for (const seat of document.querySelectorAll(".new-game-form select[name^=seat]")) {
-  const field = document.createElement("div");
-  field.className = "player-picker";
-  seat.closest("label").after(field);
-  const invite = seat.querySelector('option[value="invite"]');
-  playerPicker(field, "Player for seat " + seat.name.slice(4), player => {
-    invite.value = player ? "invite:" + player.id : "invite";
+function playerPicker(label, choose, otherSeats) {
+  const panel = document.createElement("details");
+  panel.className = "player-picker";
+  panel.innerHTML = `<summary><span class="picker-title">Choose a player</span><span class="picker-action"></span></summary>
+    <div class="picker-content"><input type="search" placeholder="Filter by name" autocomplete="off">
+    <ul class="picker-roster" aria-label="Available players"></ul><div class="picker-status" role="status"></div></div>`;
+  const summary = panel.querySelector("summary");
+  const title = panel.querySelector(".picker-title");
+  const action = panel.querySelector(".picker-action");
+  const input = panel.querySelector("input");
+  const list = panel.querySelector("ul");
+  const status = panel.querySelector("[role=status]");
+  input.setAttribute("aria-label", label);
+  let selected = null;
+  let players = [];
+  let counts = new Map();
+
+  function select(player) {
+    selected = player;
+    title.textContent = player ? player.name : "Choose a player";
+    action.textContent = player ? "Change" : "";
+    choose(player);
+  }
+
+  function render() {
+    const query = input.value.trim().toLowerCase();
+    const excluded = otherSeats();
+    const rows = [];
+    for (const player of players) {
+      if (excluded.has(player.id) || !player.name.toLowerCase().includes(query)) continue;
+      const row = document.createElement("li");
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "picker-choice";
+      const initial = document.createElement("span");
+      initial.className = "picker-initial";
+      initial.setAttribute("aria-hidden", "true");
+      initial.textContent = [...player.name][0]?.toUpperCase() || "·";
+      const name = document.createElement("span");
+      name.textContent = counts.get(player.name) > 1 ? player.name + " · " + player.id.slice(0, 6) : player.name;
+      button.append(initial, name);
+      if (player.id === selected?.id) button.setAttribute("aria-current", "true");
+      button.addEventListener("click", () => {
+        select(player);
+        panel.open = false;
+        summary.focus();
+      });
+      row.append(button);
+      rows.push(row);
+    }
+    list.replaceChildren(...rows);
+    list.scrollTop = 0;
+    status.textContent = rows.length ? "" : query ? "No matching players." : "No other players available.";
+  }
+
+  async function browse() {
+    // Keep the on-screen keyboard closed until the player taps the filter.
+    for (const other of document.querySelectorAll(".player-picker[open]")) {
+      if (other !== panel) other.open = false;
+    }
+    input.value = "";
+    input.disabled = true;
+    list.replaceChildren();
+    status.textContent = "Loading players…";
+    try {
+      players = await getPlayers();
+      counts = new Map();
+      for (const player of players) counts.set(player.name, (counts.get(player.name) || 0) + 1);
+      render();
+      input.disabled = false;
+    } catch {
+      status.textContent = "Couldn’t load players. ";
+      const retry = document.createElement("button");
+      retry.type = "button";
+      retry.textContent = "Try again";
+      retry.addEventListener("click", browse);
+      status.append(retry);
+    }
+  }
+  input.addEventListener("input", render);
+  input.addEventListener("keydown", event => {
+    if (event.key === "Enter") event.preventDefault();
   });
+  panel.addEventListener("toggle", () => { if (panel.open) void browse(); });
+  return {panel, reset: () => select(null)};
+}
+
+const seats = [...document.querySelectorAll(".new-game-form select[name^=seat]")];
+for (const seat of seats) {
+  const invite = seat.querySelector('option[value="invite"]');
+  const picker = playerPicker("Player for seat " + seat.name.slice(4), player => {
+    invite.value = player ? "invite:" + player.id : "invite";
+    seat.setCustomValidity(seat.value === "invite" ? "Choose a player to invite." : "");
+  }, () => new Set(seats.filter(other => other !== seat && other.value.startsWith("invite:"))
+    .map(other => other.value.slice(7))));
+  seat.closest("label").after(picker.panel);
   function togglePicker() {
     const enabled = seat.selectedOptions[0] === invite;
-    field.hidden = !enabled;
-    field.querySelector("input").disabled = !enabled;
+    picker.reset();
+    picker.panel.hidden = !enabled;
+    picker.panel.open = enabled;
   }
   seat.addEventListener("change", togglePicker);
   togglePicker();
 }
 
-const inviteForm = document.querySelector("[data-invite-form]");
 if (inviteForm) {
-  const back = document.querySelector(".back-link");
-  back.href = inviteForm.action.replace(/\/invite$/, "");
-  back.setAttribute("aria-label", "Back to game");
-  const picker = document.createElement("div");
-  inviteForm.prepend(picker);
-  playerPicker(picker, "Player to invite", player => {
-    inviteForm.elements.player.value = player ? player.id : "";
-  });
+  const send = inviteForm.querySelector("button");
+  const picker = playerPicker("Player to invite", player => {
+    inviteForm.elements.player.value = player?.id || "";
+    send.disabled = !player;
+  }, () => new Set());
+  send.disabled = true;
+  inviteForm.prepend(picker.panel);
+  picker.panel.open = true;
 }
 
 setupInstallGuide(document.querySelector("#install-guide"));
@@ -110,6 +164,7 @@ if (inbox || document.querySelector(".back-link")) {
   alertLink.className = "invitation-alert button";
   alertLink.href = "/#invitations";
   alertLink.textContent = "View game invitations";
+  const chatHeading = document.querySelector(".chat-heading");
   const previous = new Map();
   let stream;
   let request;
@@ -121,7 +176,10 @@ if (inbox || document.querySelector(".back-link")) {
   connection.href = location.href;
   connection.textContent = "Updates paused · Reconnect";
   function reportFailure() {
-    if (++failures >= 2 && !connection.isConnected) document.querySelector(".nav").after(connection);
+    if (++failures >= 2 && !connection.isConnected) {
+      if (chatHeading) chatHeading.append(connection);
+      else document.querySelector(".nav").after(connection);
+    }
   }
   function replace(id, html) {
     if (previous.get(id) === html) return;
@@ -152,13 +210,23 @@ if (inbox || document.querySelector(".back-link")) {
       if (!response.ok || response.redirected) { reportFailure(); return; }
       if (inbox) {
         const activity = await response.json();
+        const panel = document.getElementById("phone-alerts");
+        if (panel && panel.dataset.away !== String(activity.away === true)) {
+          panel.dataset.away = String(activity.away === true);
+          panel.dispatchEvent(new Event("awaychange"));
+        }
         replace("invitations", activity.invitations);
         replace("my-games", activity.games);
         replace("open-games", activity.open_games);
       } else {
         const html = await response.text();
-        if (html && !alertLink.isConnected) document.body.append(alertLink);
-        else if (!html) alertLink.remove();
+        const away = response.headers.get("x-scrabble-away");
+        if (away !== null && document.querySelector(".away-settings")) {
+          window.dispatchEvent(new CustomEvent("scrabble-away", {detail: away === "true"}));
+        }
+        const showAlert = html && away !== "true";
+        if (showAlert && !alertLink.isConnected) (chatHeading || document.body).append(alertLink);
+        else if (!showAlert) alertLink.remove();
       }
       failures = 0;
       connection.remove();

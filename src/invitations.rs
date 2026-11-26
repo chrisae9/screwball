@@ -16,7 +16,9 @@ use uuid::Uuid;
 
 #[derive(Deserialize)]
 pub struct Search {
+    #[serde(default)]
     q: String,
+    game: Option<Uuid>,
 }
 
 #[derive(Serialize)]
@@ -29,16 +31,34 @@ pub async fn search(
     State(state): State<AppState>,
     ApiAuthUser(user): ApiAuthUser,
     Query(query): Query<Search>,
-) -> Json<Vec<Player>> {
-    Json(
+) -> Result<Json<Vec<Player>>, AppError> {
+    let game = if let Some(id) = query.game {
+        let game = state
+            .store
+            .get(id)
+            .await
+            .ok_or_else(|| AppError::not_found("Game not found"))?;
+        if !is_host(&game, user) {
+            return Err(AppError::bad_request("Only the host can invite players"));
+        }
+        Some(game)
+    } else {
+        None
+    };
+    Ok(Json(
         state
             .users
             .search_players(user, &query.q)
             .await
             .into_iter()
+            .filter(|(id, _)| {
+                game.as_ref().is_none_or(|game| {
+                    !is_user_seated(game, *id) && !game.seats.iter().any(|seat| seat.invited(*id))
+                })
+            })
             .map(|(id, name)| Player { id, name })
             .collect(),
-    )
+    ))
 }
 
 fn is_host(game: &Game, user: Uuid) -> bool {
@@ -84,7 +104,7 @@ pub async fn send(
 ) -> Result<Redirect, AppError> {
     let player = state
         .users
-        .get(form.player)
+        .invitable_player(form.player)
         .await
         .ok_or_else(|| AppError::not_found("Player not found"))?;
     let sender = state
@@ -164,9 +184,20 @@ pub fn inbox_html<'a>(games: impl Iterator<Item = &'a Game>, user: Uuid) -> Stri
     }
 }
 
-pub async fn inbox(State(state): State<AppState>, ApiAuthUser(user): ApiAuthUser) -> Html<String> {
-    Html(inbox_html(
-        state.store.snapshots().iter().map(AsRef::as_ref),
-        user,
-    ))
+pub async fn inbox(
+    State(state): State<AppState>,
+    ApiAuthUser(user): ApiAuthUser,
+) -> impl axum::response::IntoResponse {
+    let away = state
+        .users
+        .get(user)
+        .await
+        .is_some_and(|u| u.settings.active_away_until(chrono::Utc::now()).is_some());
+    (
+        [("x-scrabble-away", if away { "true" } else { "false" })],
+        Html(inbox_html(
+            state.store.snapshots().iter().map(AsRef::as_ref),
+            user,
+        )),
+    )
 }

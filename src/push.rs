@@ -143,6 +143,13 @@ impl PushService {
         let Some(user) = users.get(user_id).await else {
             return;
         };
+        if user
+            .settings
+            .active_away_until(chrono::Utc::now())
+            .is_some()
+        {
+            return;
+        }
         let payload = match serde_json::to_vec(&notification) {
             Ok(payload) => payload,
             Err(err) => {

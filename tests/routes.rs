@@ -929,3 +929,103 @@ async fn invitations_reserve_seats_across_retries_and_declines() {
     let view: Value = serde_json::from_str(&body_string(state).await).unwrap();
     assert_eq!(view["your_seat"], 1);
 }
+
+#[tokio::test]
+async fn game_chat_is_private_idempotent_and_separate_from_moves() {
+    let app = test_app().await;
+    let (_, host) = app.register("chat-host", "Host").await;
+    let (_, guest) = app.register("chat-guest", "Guest").await;
+    let (_, outsider) = app.new_session();
+    let create = app
+        .router()
+        .oneshot(post_form("/games", Some(&host), "seat2=open"))
+        .await
+        .unwrap();
+    let board = location_of(&create);
+    let chat = format!("/api{board}/chat");
+    let state = format!("{board}/state");
+    let join = app
+        .router()
+        .oneshot(post_form(&format!("{board}/join"), Some(&guest), ""))
+        .await
+        .unwrap();
+    assert_eq!(join.status(), StatusCode::SEE_OTHER);
+    let before = body_string(
+        app.router()
+            .oneshot(get(&state, Some(&guest)))
+            .await
+            .unwrap(),
+    )
+    .await;
+    let payload = json!({"id": Uuid::new_v4(), "text": "  Good game <3  "}).to_string();
+    for request in [
+        get(&chat, Some(&outsider)),
+        get(&format!("{board}/chat"), Some(&outsider)),
+        post_json(&chat, Some(&outsider), payload.clone()),
+    ] {
+        assert_eq!(
+            app.router().oneshot(request).await.unwrap().status(),
+            StatusCode::NOT_FOUND
+        );
+    }
+    assert_eq!(
+        app.router()
+            .oneshot(get(&chat, None))
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::UNAUTHORIZED
+    );
+    for invalid in [" ".to_string(), "a".repeat(501)] {
+        let request = post_json(
+            &chat,
+            Some(&host),
+            json!({"id": Uuid::new_v4(), "text": invalid}).to_string(),
+        );
+        assert_eq!(
+            app.router().oneshot(request).await.unwrap().status(),
+            StatusCode::BAD_REQUEST
+        );
+    }
+    let post = || {
+        app.router()
+            .oneshot(post_json(&chat, Some(&host), payload.clone()))
+    };
+    let (initial, retry) = tokio::join!(post(), post());
+    for response in [initial, retry] {
+        let response = response.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let message: Value = serde_json::from_str(&body_string(response).await).unwrap();
+        assert_eq!(message["seq"], 1);
+        assert_eq!(message["mine"], true);
+    }
+    let response = app
+        .router()
+        .oneshot(get(&chat, Some(&guest)))
+        .await
+        .unwrap();
+    assert_eq!(
+        response.headers()[header::CACHE_CONTROL],
+        "private, no-store"
+    );
+    let history: Value = serde_json::from_str(&body_string(response).await).unwrap();
+    assert_eq!(history["messages"].as_array().unwrap().len(), 1);
+    assert_eq!(history["messages"][0]["text"], "Good game <3");
+    assert_eq!(history["messages"][0]["mine"], false);
+    assert_eq!(history["messages"][0]["name"], "Host");
+    let response = app
+        .router()
+        .oneshot(get(&format!("{chat}?after=1"), Some(&guest)))
+        .await
+        .unwrap();
+    let next: Value = serde_json::from_str(&body_string(response).await).unwrap();
+    assert_eq!(next["messages"], json!([]));
+    let after = body_string(
+        app.router()
+            .oneshot(get(&state, Some(&guest)))
+            .await
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(before, after);
+}

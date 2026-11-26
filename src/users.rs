@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     path::{Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -32,6 +32,14 @@ pub struct User {
 pub struct UserSettings {
     #[serde(default)]
     pub auto_zoom: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub away_until: Option<DateTime<Utc>>,
+}
+
+impl UserSettings {
+    pub fn active_away_until(&self, now: DateTime<Utc>) -> Option<DateTime<Utc>> {
+        self.away_until.filter(|until| *until > now)
+    }
 }
 
 /// Browser Push API subscription persisted per user. This mirrors the
@@ -62,6 +70,7 @@ struct Index {
 pub struct UserStore {
     index: Mutex<Index>,
     dir: PathBuf,
+    hidden_player_handles: HashSet<String>,
 }
 
 impl UserStore {
@@ -102,11 +111,24 @@ impl UserStore {
         Ok(Self {
             index: Mutex::new(Index { by_id, by_username }),
             dir,
+            hidden_player_handles: std::env::var("SCREWBALL_HIDDEN_PLAYER_UIDS")
+                .unwrap_or_default()
+                .split(',')
+                .map(str::trim)
+                .filter(|uid| !uid.is_empty())
+                .map(|uid| format!("ak-{uid}"))
+                .collect(),
         })
     }
 
     pub async fn get(&self, id: Uuid) -> Option<User> {
         self.index.lock().await.by_id.get(&id).cloned()
+    }
+
+    pub async fn invitable_player(&self, id: Uuid) -> Option<User> {
+        self.get(id)
+            .await
+            .filter(|user| !self.hidden_player_handles.contains(&user.username))
     }
 
     /// Use the same identity for roster provisioning and first sign-in.
@@ -128,7 +150,10 @@ impl UserStore {
                 .collect(),
             credentials: vec![],
             push_subscriptions: vec![],
-            settings: UserSettings { auto_zoom: true },
+            settings: UserSettings {
+                auto_zoom: true,
+                ..Default::default()
+            },
             created_at: Utc::now(),
         };
         match self.insert(user).await {
@@ -143,18 +168,18 @@ impl UserStore {
 
     pub async fn search_players(&self, viewer: Uuid, query: &str) -> Vec<(Uuid, String)> {
         let query = query.trim().to_lowercase();
-        if query.chars().count() < 2 {
-            return Vec::new();
-        }
         let index = self.index.lock().await;
         let mut matches: Vec<_> = index
             .by_id
             .values()
-            .filter(|user| user.id != viewer && user.display_name.to_lowercase().contains(&query))
+            .filter(|user| {
+                user.id != viewer
+                    && !self.hidden_player_handles.contains(&user.username)
+                    && user.display_name.to_lowercase().contains(&query)
+            })
             .map(|user| (user.id, user.display_name.clone()))
             .collect();
         matches.sort_by_key(|(id, name)| (name.to_lowercase(), *id));
-        matches.truncate(12);
         matches
     }
 
@@ -266,6 +291,25 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn browse_all_invitable_players_and_filter_on_one_character() {
+        let mut store = UserStore::load(scratch_dir()).await.unwrap();
+        let viewer = store.authentik_profile("viewer", "Viewer").await.unwrap();
+        let hidden = store.authentik_profile("test-uid", "Robot").await.unwrap();
+        store.hidden_player_handles.insert("ak-test-uid".into());
+        for index in (1..=16).rev() {
+            let name = format!("Player {index:02}");
+            store.insert(sample(&name)).await.unwrap();
+        }
+        let roster = store.search_players(viewer, "").await;
+        assert_eq!(roster.len(), 16);
+        assert_eq!(roster[0].1, "Player 01");
+        assert_eq!(roster[15].1, "Player 16");
+        assert_eq!(store.search_players(viewer, "6").await.len(), 2);
+        assert!(store.invitable_player(hidden).await.is_none());
+        assert!(store.get(hidden).await.is_some());
+    }
+
+    #[tokio::test]
     async fn update_keeps_username_index_consistent_on_rename() {
         let store = UserStore::load(scratch_dir()).await.unwrap();
         let user = sample("Alice");
@@ -298,5 +342,27 @@ mod tests {
         // The rejected rename leaves both index entries intact.
         assert_eq!(store.get_by_username("alice").await.unwrap().id, alice_id);
         assert!(store.username_taken("bob").await);
+    }
+}
+
+#[cfg(test)]
+mod away_tests {
+    use super::*;
+
+    #[test]
+    fn legacy_settings_are_available_and_away_expires_at_the_deadline() {
+        let mut settings: UserSettings = serde_json::from_str(r#"{"auto_zoom":true}"#).unwrap();
+        let now = Utc::now();
+        assert_eq!(settings.active_away_until(now), None);
+        settings.away_until = Some(now);
+        assert_eq!(
+            settings.active_away_until(now - chrono::Duration::seconds(1)),
+            Some(now)
+        );
+        assert_eq!(settings.active_away_until(now), None);
+        assert_eq!(
+            settings.active_away_until(now + chrono::Duration::seconds(1)),
+            None
+        );
     }
 }

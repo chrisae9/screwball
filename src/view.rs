@@ -303,7 +303,7 @@ fn last_play_positions(game: &Game) -> Vec<PositionView> {
 }
 
 /// Indices of the highest-scoring seat(s) once a game is finished.
-fn winners(game: &Game) -> Vec<usize> {
+pub(crate) fn winners(game: &Game) -> Vec<usize> {
     if game.status != GameStatus::Finished {
         return Vec::new();
     }

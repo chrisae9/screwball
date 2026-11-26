@@ -40,9 +40,15 @@ test("settings page", async ({ page }) => {
 });
 
 test("new game page", async ({ page }) => {
+  // Other tests register players concurrently. Keep the screenshot roster stable.
+  const names = ["Alex", "Casey", "Jamie", "Morgan", "Riley", "Sam", "Taylor"];
+  await page.route("**/api/players", route => route.fulfill({
+    json: names.map((name, index) => ({id: String(index), name})),
+  }));
   await signIn(page, "scott");
   await page.goto("/games/new");
   await expect(page.getByRole("heading", { name: "New game" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Alex", exact: true })).toBeVisible();
   await expect(page).toHaveScreenshot("new-game.png", { fullPage: true });
 });
 

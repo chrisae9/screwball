@@ -1,3 +1,31 @@
+function localizeAwayTime() {
+  const time = document.getElementById("away-until");
+  if (time) time.textContent = new Intl.DateTimeFormat(undefined, {
+    weekday: "short", hour: "numeric", minute: "2-digit",
+  }).format(new Date(time.dateTime));
+}
+localizeAwayTime();
+
+let updatingAway = false;
+window.addEventListener("scrabble-away", async event => {
+  const panel = document.querySelector(".away-settings");
+  if (!panel || updatingAway || event.detail === !!panel.querySelector("#away-until")) return;
+  // The server controls expiry. Update only this card, preserving other pending form edits.
+  updatingAway = true;
+  try {
+    const response = await fetch("/settings", {cache: "no-store", signal: AbortSignal.timeout(8000)});
+    if (!response.ok || response.redirected) return;
+    const html = new DOMParser().parseFromString(await response.text(), "text/html");
+    const next = html.querySelector(".away-settings");
+    if (next) {
+      panel.replaceWith(next);
+      localizeAwayTime();
+      void refreshStatus();
+    }
+  } catch { /* The next activity check retries while the two states differ. */ }
+  finally { updatingAway = false; }
+});
+
 const statusEl = document.getElementById("notif-status");
 const buttonEl = document.getElementById("notif-enable");
 
@@ -77,6 +105,12 @@ let updating = false;
 
 async function refreshStatus(prompt = false) {
   if (updating || !statusEl || !buttonEl || document.hidden) return;
+  if (homePanel?.dataset.away === "true") {
+    homePanel.hidden = false;
+    setStatus("Away mode is on. You can resume alerts in Settings.");
+    buttonEl.hidden = true;
+    return;
+  }
   const ios = /iPad|iPhone|iPod/.test(navigator.userAgent)
     || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
   if (homePanel) homePanel.hidden = false;
@@ -108,7 +142,7 @@ async function refreshStatus(prompt = false) {
   try {
     // Re-save the current device even when its browser already has a subscription.
     await enableNotifications();
-    setStatus("Notifications are on.");
+    setStatus(document.getElementById("away-until") ? "This device is registered for notifications." : "Notifications are on.");
     buttonEl.hidden = true;
     if (homePanel) homePanel.hidden = true;
   } catch {
@@ -120,6 +154,7 @@ async function refreshStatus(prompt = false) {
     updating = false;
   }
 }
+homePanel?.addEventListener("awaychange", () => refreshStatus());
 buttonEl?.addEventListener("click", () => refreshStatus(true));
 document.addEventListener("visibilitychange", () => refreshStatus());
 window.addEventListener("online", () => refreshStatus());
