@@ -44,19 +44,24 @@ body {
   border-bottom: 1px solid var(--line);
 }
 
+.nav:has(> .brand) { padding-block: .125rem; }
+
 .nav .brand {
   justify-self: start;
   display: inline-flex;
-  width: 1.5rem;
-  height: 1.5rem;
+  align-items: center;
+  width: auto;
+  height: auto;
+  min-height: 44px;
+  color: var(--ink);
+  font: bold 1.65rem/1.1 Georgia, serif;
+  letter-spacing: -.045em;
   text-decoration: none;
 }
 
-.brand-icon {
-  display: block;
-  width: 100%;
-  height: 100%;
-}
+/* Previously opened dashboards receive this sheet through their live feed. */
+.nav .brand:has(> .brand-icon)::before { content: "Scrabble"; }
+.nav .brand > .brand-icon { display: none; }
 
 .nav-links {
   display: flex;
@@ -781,6 +786,11 @@ section.card + section.card {
   }
 }
 
+@media (min-width: 641px) and (pointer: fine) {
+  /* Let the history pane scroll within the fixed-height desktop game card. */
+  .game-page #game-island { min-height: 0; }
+}
+
 /* --- Interactive island --- */
 [hidden] { display: none !important; }
 
@@ -1262,10 +1272,6 @@ section.card + section.card {
     font-size: 0.9rem;
   }
 
-  .nav .brand {
-    width: 1.15rem;
-    height: 1.15rem;
-  }
 
   .header-scores {
     justify-content: flex-start;

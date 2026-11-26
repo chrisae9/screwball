@@ -135,10 +135,7 @@ fn layout_with_back(
         } else if matches!(parent, BackTarget::Settings) {
             r#"<a class="back-link" href="/settings" aria-label="Back to settings"><span aria-hidden="true">‹</span> Settings</a>"#.to_string()
         } else if title == "Scrabble" {
-            format!(
-                r#"<a class="brand" href="/" aria-label="Scrabble home"><img class="brand-icon" src="{}" alt=""></a>"#,
-                asset("/public/favicon.svg")
-            )
+            r#"<a class="brand" href="/" aria-label="Scrabble home">Scrabble</a>"#.to_string()
         } else {
             r#"<a class="back-link" href="/" aria-label="Back to games"><span aria-hidden="true">‹</span> Back</a>"#.to_string()
         },

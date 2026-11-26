@@ -435,9 +435,8 @@ fn header_has_single_home_link_and_mobile_score() {
         "demo link should not exist in the client bundle",
     );
     assert!(
-        APP_CSS.contains(".nav .brand {\n  justify-self: start;\n  display: inline-flex;\n  width: 1.5rem;\n  height: 1.5rem;")
-            && APP_CSS.contains(".nav .brand {\n    width: 1.15rem;\n    height: 1.15rem;"),
-        "header icon should stay compact on mobile",
+        css_rule_contains(".nav .brand", "min-height: 44px;"),
+        "the home title should be a full-size touch target",
     );
     assert!(
         css_rule_contains(".header-score-name", "overflow: hidden;")

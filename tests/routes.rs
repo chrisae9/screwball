@@ -292,6 +292,7 @@ async fn home_page_logged_in_links_to_new_game_page() {
     let response = app.router().oneshot(get("/", Some(&cookie))).await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
     let html = body_string(response).await;
+    assert!(html.contains(r#"aria-label="Scrabble home">Scrabble</a>"#));
     assert!(html.contains("New game"));
     assert!(html.contains("href=\"/games/new\""));
     assert!(html.contains("Sign out"));
@@ -394,7 +395,7 @@ async fn home_page_lists_joinable_open_games_separately() {
     let html = body_string(response).await;
 
     assert!(html.contains("<h1>Open games</h1>"));
-    assert!(html.contains("<strong>Host</strong><span>1 open seat</span>"));
+    assert!(html.contains("<strong>Host</strong> <span>1 open seat</span>"));
     assert!(html.contains(&format!(r#"action="/games/{joinable_id}/join""#)));
     assert!(
         html.contains(r#"<button type="submit" class="button button-secondary">Join</button>"#)
