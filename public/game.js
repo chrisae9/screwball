@@ -1654,7 +1654,8 @@ function notifyTurn(body, url) {
   });
 }
 
-const BASE_FAVICON = "/public/favicon.svg";
+const baseFavicon = document.querySelector('link[rel="icon"]').href;
+let faviconImage;
 const turnAffordanceSources = new Map();
 let turnAffordanceCount = null;
 
@@ -1697,29 +1698,33 @@ function setAppBadge(count) {
   }
 }
 
-function setFavicon(count) {
-  const old = document.querySelector('link[rel="icon"]');
-  if (old) old.remove();
-  const link = document.createElement("link");
-  link.rel = "icon";
-  link.type = "image/svg+xml";
-  if (!count) {
-    link.href = BASE_FAVICON;
-  } else {
-    const badge = count > 9 ? "9+" : String(count);
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
-  <rect width="64" height="64" rx="12" fill="#f6e6b4" stroke="#d8c27e" stroke-width="3"/>
-  <text x="32" y="42" font-family="Georgia, serif" font-size="36" font-weight="700"
-        text-anchor="middle" fill="#b4451f">S</text>
-  <text x="52" y="56" font-family="system-ui, sans-serif" font-size="12" font-weight="600"
-        text-anchor="middle" fill="#1f2933">1</text>
-  <circle cx="52" cy="12" r="11" fill="#e53e3e"/>
-  <text x="52" y="17" font-family="system-ui, sans-serif" font-size="14" font-weight="700"
-        text-anchor="middle" fill="#fff">${badge}</text>
-</svg>`;
-    link.href = "data:image/svg+xml," + encodeURIComponent(svg);
+async function setFavicon(count) {
+  const link = document.querySelector('link[rel="icon"]');
+  link.href = baseFavicon;
+  if (!count) return;
+  faviconImage ??= new Image();
+  if (!faviconImage.src) faviconImage.src = baseFavicon;
+  try {
+    await faviconImage.decode();
+  } catch {
+    return;
   }
-  document.head.appendChild(link);
+  if (count !== turnAffordanceCount) return;
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = 64;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+  ctx.drawImage(faviconImage, 0, 0, 64, 64);
+  ctx.fillStyle = "#e53e3e";
+  ctx.beginPath();
+  ctx.arc(50, 14, 14, 0, 2 * Math.PI);
+  ctx.fill();
+  ctx.fillStyle = "#fff";
+  ctx.font = "bold 17px system-ui";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(count > 9 ? "9+" : String(count), 50, 15);
+  link.href = canvas.toDataURL();
 }
 
 function statusText(game) {

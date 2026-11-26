@@ -76,7 +76,12 @@ fn layout_with_head(title: &str, body: &str, head_extra: &str, body_class: &str)
   {head_extra}
 </head>
 <body class="{body_class}">
-  {nav}
+  <nav class="nav">
+  <a class="brand" href="/" aria-label="Scrabble home">
+    <img class="brand-icon" src="{favicon}" alt="">
+  </a>
+  <div class="nav-links"></div>
+</nav>
   <main class="page">
   {body}
   </main>
@@ -89,18 +94,8 @@ fn layout_with_head(title: &str, body: &str, head_extra: &str, body_class: &str)
         manifest = asset("/public/manifest.webmanifest"),
         head_extra = head_extra,
         body_class = body_class,
-        nav = nav(),
         body = body,
     )
-}
-
-pub fn nav() -> &'static str {
-    r#"<nav class="nav">
-  <a class="brand" href="/" aria-label="Scrabble home">
-    <img class="brand-icon" src="/public/favicon.svg" alt="">
-  </a>
-  <div class="nav-links"></div>
-</nav>"#
 }
 
 pub fn error_page(title: &str, message: &str) -> String {
