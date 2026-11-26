@@ -31,13 +31,17 @@ test("foreground push leases follow each window and release on background or clo
     })});
   }, endpoint);
   const presence = async (p, active, action) => {
-    const report = p.waitForResponse(response => {
-      if (!response.url().endsWith("/api/push/presence") || response.status() !== 204) return false;
-      const data = response.request().postDataJSON();
+    // A response to an earlier heartbeat can arrive after a visibility change.
+    // Identify the newly sent request, then check its own acknowledgement.
+    const report = p.waitForRequest(request => {
+      if (!request.url().endsWith("/api/push/presence")) return false;
+      const data = request.postDataJSON();
       return data ? data.endpoint === endpoint && data.visible === active : !active;
     }, {timeout: 12000});
     if (action) await action();
-    return (await report).request().postDataJSON() ?? await p.evaluate(() => window.lastPresenceBeacon);
+    const sent = await report;
+    expect((await sent.response())?.status()).toBe(204);
+    return sent.postDataJSON() ?? await p.evaluate(() => window.lastPresenceBeacon);
   };
   const first = await presence(page, true, () => page.goto("/leaderboard"));
   const next = await presence(page, true);
