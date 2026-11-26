@@ -174,7 +174,8 @@ async fn home_page_logged_out_shows_signin() {
     let response = app.router().oneshot(get("/", None)).await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
     let html = body_string(response).await;
-    assert!(html.contains("Screwball"));
+    assert!(html.contains(r#"<meta name="apple-mobile-web-app-title" content="Scrabble">"#));
+    assert!(html.contains("<title>Scrabble</title>"));
     assert!(html.contains("Sign in with passkey"));
     assert!(html.contains("/public/auth.js"));
 }

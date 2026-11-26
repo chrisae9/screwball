@@ -142,7 +142,7 @@ async function localNotification() {
     throw new Error("service workers are not supported");
   }
   const registration = await navigator.serviceWorker.register("/sw.js");
-  await registration.showNotification("Screwball local notification test", {
+  await registration.showNotification("Scrabble local notification test", {
     body: "If you can see this, browser notification display is working.",
     icon: "/public/apple-touch-icon.png",
     badge: "/public/apple-touch-icon.png",

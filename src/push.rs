@@ -109,7 +109,7 @@ impl PushService {
         let body = last_move_player(game)
             .filter(|name| name != &player_name)
             .map(|name| format!("{name} just played. It is your turn."))
-            .unwrap_or_else(|| "It is your turn in Screwball.".to_string());
+            .unwrap_or_else(|| "It is your turn in Scrabble.".to_string());
         let notification = TurnNotification {
             title: "Your turn!",
             body,
@@ -155,7 +155,7 @@ impl PushService {
             .unwrap_or_default();
 
         let notification = TurnNotification {
-            title: "Screwball notification test",
+            title: "Scrabble notification test",
             body: "If you can see this, server push is working.".to_string(),
             url: "/debug/notifications".to_string(),
             tag: "screwball-notification-debug".to_string(),

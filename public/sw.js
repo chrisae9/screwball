@@ -10,7 +10,7 @@ self.addEventListener("push", (event) => {
 
   const title = payload.title || "Your turn!";
   const options = {
-    body: payload.body || "It is your turn in Screwball.",
+    body: payload.body || "It is your turn in Scrabble.",
     icon: "/public/apple-touch-icon.png",
     badge: "/public/apple-touch-icon.png",
     tag: payload.tag || "screwball-turn",

@@ -1643,7 +1643,7 @@ function notifyTurn(body, url) {
   if (!("Notification" in window) || Notification.permission !== "granted") return;
   if (document.visibilityState === "visible") return;
   const n = new Notification("Your turn!", {
-    body: body || "It's your turn in Screwball",
+    body: body || "It's your turn in Scrabble",
     icon: "/public/apple-touch-icon.png",
     tag: url || "screwball-turn",
   });
@@ -1906,7 +1906,7 @@ function App({ gameId, initial, autoZoom }) {
           ? next.seats[next.moves[next.moves.length - 1].seat]?.name
           : null;
         notifyTurn(
-          who ? `${who} just played` : "It's your turn in Screwball",
+          who ? `${who} just played` : "It's your turn in Scrabble",
           `/games/${gameId}`,
         );
       }

@@ -86,6 +86,15 @@ pub fn router(state: AppState) -> Router {
     router.with_state(state)
 }
 
+// Phones can request install metadata without the signed-in browser cookies.
+const INSTALL_ASSETS: &[&str] = &[
+    "/public/manifest.webmanifest",
+    "/public/apple-touch-icon.png",
+    "/public/favicon.svg",
+    "/public/scrabble-192.png",
+    "/public/scrabble-512.png",
+];
+
 // Enabled only behind the header-clearing Authentik gateway and its ingress policy.
 async fn authentik_player(State(state): State<AppState>, req: Request, next: Next) -> Response {
     use crate::users::{User, UserSettings};
@@ -94,7 +103,9 @@ async fn authentik_player(State(state): State<AppState>, req: Request, next: Nex
 
     let (mut parts, body) = req.into_parts();
     let path = parts.uri.path();
-    if path == "/healthcheck" {
+    if path == "/healthcheck"
+        || (matches!(parts.method, Method::GET | Method::HEAD) && INSTALL_ASSETS.contains(&path))
+    {
         return next.run(Request::from_parts(parts, body)).await;
     }
     let header = |name: &str| parts.headers.get(name).and_then(|h| h.to_str().ok());
@@ -197,7 +208,8 @@ async fn log_request(State(state): State<AppState>, request: Request, next: Next
 /// so cache them immutably. Debug builds use no-cache because local files can
 /// change without restarting the server, and stale JS/CSS is painful to debug.
 async fn cache_control(request: Request, next: Next) -> Response {
-    let is_asset = request.uri().path().starts_with("/public/");
+    let path = request.uri().path();
+    let is_asset = path.starts_with("/public/") && !INSTALL_ASSETS.contains(&path);
     let mut response = next.run(request).await;
     let value = if is_asset && !cfg!(debug_assertions) {
         "public, max-age=31536000, immutable"
@@ -281,7 +293,7 @@ pub fn build_webauthn() -> Result<Webauthn> {
     let rp_origin = Url::parse(&rp_origin_raw).context("RP_ORIGIN must be a valid URL")?;
     WebauthnBuilder::new(&rp_id, &rp_origin)
         .context("invalid WebAuthn relying-party configuration")?
-        .rp_name("Screwball")
+        .rp_name("Scrabble")
         .build()
         .context("failed to build WebAuthn relying party")
 }
@@ -292,6 +304,11 @@ fn asset_version() -> String {
     use std::hash::{Hash, Hasher};
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     for file in [
+        "public/manifest.webmanifest",
+        "public/apple-touch-icon.png",
+        "public/favicon.svg",
+        "public/scrabble-192.png",
+        "public/scrabble-512.png",
         "public/app.css",
         "public/game.js",
         "public/auth.js",

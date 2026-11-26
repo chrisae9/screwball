@@ -65,12 +65,13 @@ fn layout_with_head(title: &str, body: &str, head_extra: &str, body_class: &str)
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+  <meta name="apple-mobile-web-app-title" content="Scrabble">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <title>{title}</title>
-  <link rel="icon" href="/public/favicon.svg">
-  <link rel="apple-touch-icon" href="/public/apple-touch-icon.png">
-  <link rel="manifest" href="/public/manifest.webmanifest">
+  <link rel="icon" href="{favicon}">
+  <link rel="apple-touch-icon" sizes="180x180" href="{touch_icon}">
+  <link rel="manifest" href="{manifest}">
   <link rel="stylesheet" href="{css}">
   {head_extra}
 </head>
@@ -83,6 +84,9 @@ fn layout_with_head(title: &str, body: &str, head_extra: &str, body_class: &str)
 </html>"#,
         title = escape(title),
         css = asset("/public/app.css"),
+        favicon = asset("/public/favicon.svg"),
+        touch_icon = asset("/public/apple-touch-icon.png"),
+        manifest = asset("/public/manifest.webmanifest"),
         head_extra = head_extra,
         body_class = body_class,
         nav = nav(),
@@ -92,7 +96,7 @@ fn layout_with_head(title: &str, body: &str, head_extra: &str, body_class: &str)
 
 pub fn nav() -> &'static str {
     r#"<nav class="nav">
-  <a class="brand" href="/" aria-label="Screwball home">
+  <a class="brand" href="/" aria-label="Scrabble home">
     <img class="brand-icon" src="/public/favicon.svg" alt="">
   </a>
   <div class="nav-links"></div>
@@ -122,7 +126,7 @@ pub fn home_page(
 ) -> String {
     let Some(current) = current else {
         return layout_with_head(
-            "Screwball",
+            "Scrabble",
             &signed_out_panel(),
             &format!(
                 r#"<script type="module" src="{}" defer></script>"#,
@@ -152,7 +156,7 @@ pub fn home_page(
         .map(|name| format!("Signed in as <strong>{}</strong>", escape(name)))
         .unwrap_or_else(|| "Signed in".to_string());
     layout(
-        "Screwball",
+        "Scrabble",
         &format!(
             r#"<section class="card account">
   <p class="muted">{greeting}</p>
@@ -175,7 +179,7 @@ pub fn home_page(
 /// The standalone create-game page linked from the home screen.
 pub fn new_game_page() -> String {
     layout(
-        "New game — Screwball",
+        "New game — Scrabble",
         &format!(
             r#"<section class="card">
   <h1>New game</h1>
@@ -189,7 +193,7 @@ pub fn new_game_page() -> String {
 
 pub fn settings_page(auto_zoom: bool) -> String {
     layout_with_head(
-        "Settings — Screwball",
+        "Settings — Scrabble",
         &format!(
             r#"<section class="card">
   <h1>Settings</h1>
@@ -342,7 +346,7 @@ pub fn touch_debug_page() -> String {
 /// `public/auth.js`.
 fn signed_out_panel() -> String {
     let body = r#"<section class="card">
-  <h1>Welcome to Screwball</h1>
+  <h1>Welcome to Scrabble</h1>
   <p class="muted">A classic Scrabble-style word game. Sign in with a passkey to play — no passwords.</p>
   <p id="auth-error" class="auth-error" role="alert" hidden></p>
   <div class="auth-grid">
@@ -650,9 +654,9 @@ pub fn game_page(
     // Raw names: `layout_with_head` escapes the title itself.
     let names: Vec<String> = view.seats.iter().map(|seat| seat.name.clone()).collect();
     let title = if names.is_empty() {
-        "Game — Screwball".to_string()
+        "Game — Scrabble".to_string()
     } else {
-        format!("{} — Screwball", names.join(" vs "))
+        format!("{} — Scrabble", names.join(" vs "))
     };
     layout_with_head(&title, &body, head, "game-page")
 }
