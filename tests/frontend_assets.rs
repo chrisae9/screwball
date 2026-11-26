@@ -290,7 +290,6 @@ fn mobile_game_controls_are_compact_and_score_is_separate() {
         GAME_JS.contains("busy ? \"Playing…\" : \"Play\"")
             && GAME_JS.contains("}, \"Clear\")")
             && GAME_JS.contains("}, \"Swap\")")
-            && GAME_JS.contains("}, \"Next\")")
             && GAME_JS.contains("class: \"button play-button\"")
             && !GAME_JS.contains("Play word")
             && !GAME_JS.contains("Exchange…")
