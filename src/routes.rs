@@ -2,7 +2,7 @@ use std::convert::Infallible;
 
 use axum::{
     Json,
-    extract::{Form, Path, State},
+    extract::{Form, Path, Query, State},
     http::{StatusCode, header},
     response::{
         Html, IntoResponse, Redirect, Response,
@@ -23,7 +23,7 @@ use crate::{
     models::{Difficulty, Game, GameStatus, MoveKind, Placement, Position, SeatKind, Tile},
     render,
     session::{ApiAuthUser, AuthUser, MaybeUser},
-    users::{PushSubscription, PushSubscriptionKeys},
+    users::{PlayerNames, PushSubscription, PushSubscriptionKeys},
     view::{GameSummary, GameView},
 };
 
@@ -72,11 +72,13 @@ async fn dashboard(state: &AppState, user: Uuid) -> render::HomeActivity {
         .filter(|game| has_open_seat(game) && !game.seats.iter().any(|s| s.invited(user)))
         .map(AsRef::as_ref)
         .collect();
+    let names = state.users.player_names().await;
     render::home_activity(
         &mine,
         &joinable,
         user,
-        crate::invitations::inbox_html(games.iter().map(AsRef::as_ref), user),
+        &names,
+        crate::invitations::inbox_html(games.iter().map(AsRef::as_ref), user, &names),
         state
             .users
             .get(user)
@@ -131,20 +133,77 @@ pub async fn new_game_page(AuthUser(_user): AuthUser) -> Html<String> {
     Html(render::new_game_page())
 }
 
+#[derive(Deserialize)]
+pub struct SettingsQuery {
+    username: Option<String>,
+}
+
 pub async fn settings_page(
     State(state): State<AppState>,
     AuthUser(user): AuthUser,
+    Query(query): Query<SettingsQuery>,
 ) -> Result<Html<String>, AppError> {
-    let settings = state
+    let profile = state
         .users
         .get(user)
         .await
-        .map(|u| u.settings)
-        .unwrap_or_default();
-    Ok(Html(render::settings_page(
-        &settings,
-        settings.avatar(user),
-    )))
+        .ok_or_else(|| AppError::not_found("Player not found"))?;
+    let saved = match query.username.as_deref() {
+        Some("saved") => Some("Scrabble username saved."),
+        Some("removed") => Some("Scrabble username removed."),
+        _ => None,
+    };
+    Ok(Html(render::settings_page(&profile, None, saved)))
+}
+
+#[derive(Deserialize)]
+pub struct UsernameForm {
+    #[serde(default)]
+    handle: String,
+    remove: Option<String>,
+}
+
+pub async fn update_username(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+    Form(form): Form<UsernameForm>,
+) -> Result<Response, AppError> {
+    let removing = form.remove.as_deref() == Some("1");
+    let result = state
+        .users
+        .set_player_handle(user, (!removing).then_some(form.handle.as_str()))
+        .await;
+    match result {
+        Ok(()) => {
+            let change = if removing { "removed" } else { "saved" };
+            Ok(
+                Redirect::to(&format!("/settings?username={change}#player-username"))
+                    .into_response(),
+            )
+        }
+        Err(err @ (AppError::BadRequest(_) | AppError::Conflict(_))) => {
+            let status = if matches!(err, AppError::Conflict(_)) {
+                StatusCode::CONFLICT
+            } else {
+                StatusCode::BAD_REQUEST
+            };
+            let profile = state
+                .users
+                .get(user)
+                .await
+                .ok_or_else(|| AppError::not_found("Player not found"))?;
+            Ok((
+                status,
+                Html(render::settings_page(
+                    &profile,
+                    Some((&form.handle, err.detail())),
+                    None,
+                )),
+            )
+                .into_response())
+        }
+        Err(err) => Err(err),
+    }
 }
 
 pub async fn service_worker() -> Response {
@@ -323,10 +382,11 @@ pub async fn create_game(
     let dict = state.dict.clone();
     state.store.update(id, |game| run_bots(game, &dict)).await?;
 
+    let names = state.users.player_names().await;
     for (_, player) in invitations {
         state
             .push
-            .notify_invite(&state.users, player, id, &your_name)
+            .notify_invite(&state.users, player, id, names.name(user, &your_name))
             .await;
     }
     Ok(Redirect::to(&format!("/games/{id}")))
@@ -364,7 +424,7 @@ pub async fn game_page(
         .get(id)
         .await
         .ok_or_else(|| AppError::not_found("game not found"))?;
-    let view = GameView::for_viewer(&game, viewer_id(user));
+    let view = GameView::for_viewer(&game, viewer_id(user), &state.users.player_names().await);
     let initial = serde_json::to_string(&view).map_err(AppError::internal)?;
     let two_letter =
         serde_json::to_string(&state.dict.two_letter_words()).map_err(AppError::internal)?;
@@ -390,12 +450,12 @@ pub async fn game_page(
 }
 
 /// The viewer's games in the order used by Next game.
-fn my_game_summaries(state: &AppState, user: Uuid) -> Vec<GameSummary> {
+fn my_game_summaries(state: &AppState, user: Uuid, names: &PlayerNames) -> Vec<GameSummary> {
     let mut summaries: Vec<GameSummary> = state
         .store
         .snapshots()
         .iter()
-        .filter_map(|game| GameSummary::for_viewer(game, user))
+        .filter_map(|game| GameSummary::for_viewer(game, user, names))
         .collect();
     summaries.sort_by(|a, b| {
         b.your_turn
@@ -412,7 +472,7 @@ pub async fn my_games(
     MaybeUser(user): MaybeUser,
 ) -> Json<Vec<GameSummary>> {
     let summaries = match user {
-        Some(user) => my_game_summaries(&state, user),
+        Some(user) => my_game_summaries(&state, user, &state.users.player_names().await),
         None => Vec::new(),
     };
     Json(summaries)
@@ -609,7 +669,11 @@ pub async fn game_state(
         .get(id)
         .await
         .ok_or_else(|| AppError::not_found("game not found"))?;
-    Ok(Json(GameView::for_viewer(&game, viewer_id(user))))
+    Ok(Json(GameView::for_viewer(
+        &game,
+        viewer_id(user),
+        &state.users.player_names().await,
+    )))
 }
 
 /// Server-Sent Events stream of this game's state for the viewer: an immediate
@@ -632,11 +696,11 @@ pub async fn game_events(
     // State carried through the stream: Some(view) to emit first, then wait for
     // change notifications and fetch the latest view on each.
     let stream = unfold(
-        (Some(initial), rx, store, id, viewer),
-        move |(pending, mut rx, store, id, viewer)| async move {
+        (Some(initial), rx, store, id, viewer, state.users),
+        move |(pending, mut rx, store, id, viewer, users)| async move {
             if let Some(game) = pending {
-                let event = sse_state_event(&game, viewer);
-                return Some((Ok(event), (None, rx, store, id, viewer)));
+                let event = sse_state_event(&game, viewer, &users.player_names().await);
+                return Some((Ok(event), (None, rx, store, id, viewer, users)));
             }
             loop {
                 let emit = match rx.recv().await {
@@ -649,8 +713,8 @@ pub async fn game_events(
                     continue;
                 }
                 let game = store.get(id).await?;
-                let event = sse_state_event(&game, viewer);
-                return Some((Ok(event), (None, rx, store, id, viewer)));
+                let event = sse_state_event(&game, viewer, &users.player_names().await);
+                return Some((Ok(event), (None, rx, store, id, viewer, users)));
             }
         },
     );
@@ -658,8 +722,8 @@ pub async fn game_events(
     Ok(Sse::new(stream).keep_alive(KeepAlive::default()))
 }
 
-fn sse_state_event(game: &Game, viewer: Uuid) -> Event {
-    let view = GameView::for_viewer(game, viewer);
+fn sse_state_event(game: &Game, viewer: Uuid, names: &PlayerNames) -> Event {
+    let view = GameView::for_viewer(game, viewer, names);
     Event::default()
         .json_data(&view)
         .unwrap_or_else(|_| Event::default().comment("serialize error"))
@@ -752,9 +816,12 @@ pub async fn submit_move(
     };
 
     let dict = state.dict.clone();
+    let names = state.users.player_names().await;
     let result = state
         .store
-        .update(id, move |game| apply_player_move(game, &dict, user, kind))
+        .update(id, move |game| {
+            apply_player_move(game, &dict, user, kind, &names)
+        })
         .await;
 
     match result {
@@ -790,6 +857,7 @@ pub async fn abandon_game(
     ApiAuthUser(user): ApiAuthUser,
     Path(id): Path<Uuid>,
 ) -> Response {
+    let names = state.users.player_names().await;
     let result = state
         .store
         .update(id, move |game| {
@@ -810,7 +878,7 @@ pub async fn abandon_game(
                 });
             }
             game::abandon(game);
-            Ok(GameView::for_viewer(game, user))
+            Ok(GameView::for_viewer(game, user, &names))
         })
         .await;
 
@@ -872,6 +940,7 @@ fn apply_player_move(
     dict: &crate::dict::Dictionary,
     user: Uuid,
     kind: MoveKind,
+    names: &PlayerNames,
 ) -> Result<GameView, ApiMoveError> {
     let seat_index = player_on_turn(game, user)?;
     let mut rng = rand::thread_rng();
@@ -881,7 +950,7 @@ fn apply_player_move(
     })?;
 
     run_bots(game, dict);
-    Ok(GameView::for_viewer(game, user))
+    Ok(GameView::for_viewer(game, user, names))
 }
 
 /// Drive any bot seats whose turn it is until a human is on turn or the game ends.

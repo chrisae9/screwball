@@ -251,11 +251,12 @@ pub async fn page(
     Path(id): Path<Uuid>,
 ) -> Result<Html<String>, AppError> {
     let (game, _) = participants(&state, id, viewer).await?;
+    let player_names = state.users.player_names().await;
     let names = game
         .seats
         .iter()
         .filter(|s| matches!(s.kind, SeatKind::Human { user_id: Some(_) }))
-        .map(|s| s.name.as_str())
+        .map(|s| player_names.seat(s).into_owned())
         .collect::<Vec<_>>()
         .join(" · ");
     Ok(Html(render::chat_page(id, viewer, &names)))
@@ -280,6 +281,7 @@ pub async fn history(
     Query(range): Query<Range>,
 ) -> Result<Json<History>, AppError> {
     participants(&state, id, viewer).await?;
+    let names = state.users.player_names().await;
     let room = state.store.chats.room(id).await?;
     let guard = room.lock().await;
     let messages = &guard.as_ref().unwrap().messages;
@@ -298,7 +300,10 @@ pub async fn history(
         messages: messages[start..end]
             .iter()
             .enumerate()
-            .map(|(i, msg)| msg.view(start + i, viewer))
+            .map(|(i, msg)| MessageView {
+                name: names.name(msg.sender, &msg.name).to_owned(),
+                ..msg.view(start + i, viewer)
+            })
             .collect(),
         more_before: start > 0,
     }))
@@ -359,10 +364,16 @@ pub async fn send(
     };
     // Finish the atomic write even if a phone disconnects mid-request. Retrying
     // with the same message id returns the committed copy.
-    tokio::spawn(async move { store.chats.append(id, message).await })
+    let mut view = tokio::spawn(async move { store.chats.append(id, message).await })
         .await
-        .map_err(AppError::internal)?
-        .map(Json)
+        .map_err(AppError::internal)??;
+    view.name = state
+        .users
+        .player_names()
+        .await
+        .name(viewer, &view.name)
+        .to_owned();
+    Ok(Json(view))
 }
 
 #[cfg(test)]

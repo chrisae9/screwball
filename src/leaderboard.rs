@@ -47,14 +47,17 @@ fn ranked_game(game: &Game) -> bool {
             .any(|m| matches!(m.kind, MoveKind::Play { .. }))
 }
 
-fn standings<'a>(games: impl Iterator<Item = &'a Game>) -> Vec<(Uuid, Standing)> {
+fn standings<'a>(
+    games: impl Iterator<Item = &'a Game>,
+    names: &crate::users::PlayerNames,
+) -> Vec<(Uuid, Standing)> {
     let mut players = HashMap::<Uuid, Standing>::new();
     for game in games.filter(|g| ranked_game(g)) {
         let leaders = crate::view::winners(game);
         for (index, seat) in game.seats.iter().enumerate() {
             if let SeatKind::Human { user_id: Some(id) } = seat.kind {
                 let record = players.entry(id).or_insert_with(|| Standing {
-                    name: seat.name.clone(),
+                    name: names.seat(seat).into_owned(),
                     ..Standing::default()
                 });
                 record.played += 1;
@@ -77,7 +80,10 @@ fn standings<'a>(games: impl Iterator<Item = &'a Game>) -> Vec<(Uuid, Standing)>
 pub async fn page(State(state): State<AppState>, AuthUser(viewer): AuthUser) -> Html<String> {
     let snapshots = state.store.snapshots();
     Html(render(
-        &standings(snapshots.iter().map(AsRef::as_ref)),
+        &standings(
+            snapshots.iter().map(AsRef::as_ref),
+            &state.users.player_names().await,
+        ),
         viewer,
     ))
 }
@@ -189,7 +195,7 @@ mod tests {
         let mut second = match_with(&[14, 7, 4]);
         second.seats[0].name = "<Ann>".into();
         let third = match_with(&[14, 21, 16]);
-        let players = standings([&second, &third, &first].into_iter());
+        let players = standings([&second, &third, &first].into_iter(), &Default::default());
         let points: Vec<_> = players
             .iter()
             .map(|(_, s)| (s.played, s.wins, s.draws, s.points()))

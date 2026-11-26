@@ -1936,14 +1936,14 @@ section.card + section.card {
 }
 
 .profile-greeting { display: flex; align-items: center; gap: .55rem; }
-.avatar-picker {
+.username-picker, .avatar-picker {
   max-width: 32rem;
   margin-bottom: 1rem;
   border: 1px solid var(--line);
   border-radius: .7rem;
   background: var(--surface);
 }
-.avatar-picker summary {
+.username-picker summary, .avatar-picker summary {
   display: flex;
   align-items: center;
   gap: .65rem;
@@ -1953,10 +1953,10 @@ section.card + section.card {
   list-style: none;
   font-weight: 650;
 }
-.avatar-picker summary::-webkit-details-marker { display: none; }
-.avatar-picker summary small { display: block; font-size: .8rem; color: var(--muted); font-weight: 400; }
+.username-picker summary::-webkit-details-marker, .avatar-picker summary::-webkit-details-marker { display: none; }
+.username-picker summary small, .avatar-picker summary small, .picker-choice small { display: block; font-size: .8rem; color: var(--muted); font-weight: 400; }
 .avatar-change { margin-inline-start: auto; color: var(--accent); font-size: .85rem; }
-.avatar-picker form { padding: .35rem .65rem .65rem; margin: 0; }
+.username-picker form, .avatar-picker form { padding: .35rem .65rem .65rem; margin: 0; }
 .avatar-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(46px, 1fr));
@@ -1995,3 +1995,9 @@ section.card + section.card {
 .avatar-controls { display: flex; align-items: center; justify-content: space-between; gap: .5rem; padding-top: .6rem; }
 .avatar-selected { font-size: .9rem; overflow-wrap: anywhere; }
 .avatar-controls button { min-height: 44px; }
+
+.username-picker .form { gap: .45rem; }
+.username-picker p, .handle-saved { font-size: .88rem; margin: 0 0 .4rem; }
+.username-picker .handle-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+.handle-actions .button, .username-picker input { min-height: 44px; }
+.handle-error { color: var(--ink); font-weight: 600; }

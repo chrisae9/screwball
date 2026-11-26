@@ -184,13 +184,14 @@ pub fn home_activity(
     games: &[&Game],
     joinable_games: &[&Game],
     current: Uuid,
+    names: &crate::users::PlayerNames,
     invitations: String,
     away: bool,
 ) -> HomeActivity {
     let list = if games.is_empty() {
         "<p class=\"muted\">No games yet. Create one to get started.</p>".to_string()
     } else {
-        game_list(games, current)
+        game_list(games, current, names)
     };
     let open_games = if joinable_games.is_empty() {
         String::new()
@@ -198,7 +199,7 @@ pub fn home_activity(
         format!(
             r#"<h1>Open games</h1>
   {}"#,
-            open_game_list(joinable_games),
+            open_game_list(joinable_games, names),
         )
     };
     HomeActivity {
@@ -235,7 +236,11 @@ pub fn home_page(activity: Option<HomeActivity>, profile: Option<&crate::users::
             format!(
                 "{} <span>Signed in as <strong>{}</strong></span>",
                 crate::avatars::image(u.settings.avatar(u.id)),
-                escape(&u.display_name)
+                u.settings
+                    .player_handle
+                    .as_deref()
+                    .map(|h| format!("@{}", escape(h)))
+                    .unwrap_or_else(|| escape(&u.display_name))
             )
         })
         .unwrap_or_else(|| "Signed in".to_string());
@@ -301,7 +306,46 @@ pub fn invite_page(id: Uuid) -> String {
     )
 }
 
-pub fn settings_page(settings: &crate::users::UserSettings, avatar: u8) -> String {
+pub fn settings_page(
+    profile: &crate::users::User,
+    error: Option<(&str, &str)>,
+    saved: Option<&str>,
+) -> String {
+    let settings = &profile.settings;
+    let avatar = settings.avatar(profile.id);
+    let handle = settings.player_handle.as_deref();
+    let summary = handle
+        .map(|h| format!("@{}", escape(h)))
+        .unwrap_or_else(|| "Choose a username".into());
+    let value = escape(error.map(|(input, _)| input).or(handle).unwrap_or_default());
+    let opened = if error.is_some() { " open" } else { "" };
+    let invalid = if error.is_some() {
+        r#" aria-invalid="true" aria-describedby="handle-hint handle-error""#
+    } else {
+        r#" aria-describedby="handle-hint""#
+    };
+    let error_text = error
+        .map(|(_, message)| {
+            format!(
+                r#"<p class="handle-error" id="handle-error" role="alert">{}</p>"#,
+                escape(message)
+            )
+        })
+        .unwrap_or_default();
+    let feedback = saved
+        .map(|message| {
+            format!(
+                r#"<p class="handle-saved" role="status">{}</p>"#,
+                escape(message)
+            )
+        })
+        .unwrap_or_default();
+    let remove = if handle.is_some() {
+        r#"<button class="button button-secondary" name="remove" value="1" formnovalidate>Remove username</button>"#
+    } else {
+        ""
+    };
+
     use crate::users::AwayState;
     let away = settings.away_state(chrono::Utc::now());
     let away_state = away.token();
@@ -328,6 +372,16 @@ pub fn settings_page(settings: &crate::users::UserSettings, avatar: u8) -> Strin
         &format!(
             r#"<section class="card">
   <h1>Settings</h1>
+  <details id="player-username" class="username-picker"{opened}>
+    <summary><span>Scrabble username<small>{summary}</small></span><span class="avatar-change">Edit</span></summary>
+    <form method="post" action="/settings/username#player-username" class="form">
+      <label for="public-handle">Player username</label>
+      <input id="public-handle" type="text" name="handle" value="{value}" placeholder="e.g. tilefox" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="64" required{invalid}>
+      <p id="handle-hint" class="muted">Friends can find you by this name. Use 3–20 letters, numbers or underscores, starting with a letter or number.</p>
+      {error_text}<div class="handle-actions"><button class="button">Save username</button>{remove}</div>
+    </form>
+  </details>
+  {feedback}
   {icon_chooser}
   <fieldset class="appearance">
     <legend>Appearance</legend>
@@ -649,7 +703,7 @@ fn new_game_form() -> String {
     )
 }
 
-fn game_list(games: &[&Game], current: Uuid) -> String {
+fn game_list(games: &[&Game], current: Uuid, names: &crate::users::PlayerNames) -> String {
     let mut active_games: Vec<&Game> = games
         .iter()
         .copied()
@@ -663,7 +717,7 @@ fn game_list(games: &[&Game], current: Uuid) -> String {
 
     let mut active = String::new();
     for game in active_games {
-        active.push_str(&game_list_item(game, current));
+        active.push_str(&game_list_item(game, current, names));
     }
 
     let mut finished_games: Vec<&Game> = games
@@ -675,7 +729,7 @@ fn game_list(games: &[&Game], current: Uuid) -> String {
 
     let mut finished = String::new();
     for game in finished_games {
-        finished.push_str(&game_list_item(game, current));
+        finished.push_str(&game_list_item(game, current, names));
     }
 
     let mut html = format!("<ul class=\"game-list\">{active}</ul>");
@@ -690,7 +744,7 @@ fn game_list(games: &[&Game], current: Uuid) -> String {
     html
 }
 
-fn game_list_item(game: &Game, current: Uuid) -> String {
+fn game_list_item(game: &Game, current: Uuid, names: &crate::users::PlayerNames) -> String {
     let your_turn = is_current_turn(game, current);
     let state = match game.status {
         GameStatus::Finished => "Final score".to_string(),
@@ -698,7 +752,7 @@ fn game_list_item(game: &Game, current: Uuid) -> String {
         GameStatus::Active if your_turn => "Your turn".to_string(),
         GameStatus::Active => match game.seats.get(game.turn) {
             Some(seat) if !matches!(seat.kind, SeatKind::Human { user_id: None }) => {
-                format!("{}’s turn", escape(&seat.name))
+                format!("{}’s turn", escape(&names.seat(seat)))
             }
             _ => "Waiting for a player".to_string(),
         },
@@ -708,7 +762,7 @@ fn game_list_item(game: &Game, current: Uuid) -> String {
         let name = if matches!(seat.kind, SeatKind::Human { user_id: Some(id) } if id == current) {
             "You".to_string()
         } else {
-            escape(&seat.name)
+            escape(&names.seat(seat))
         };
         let score = if matches!(seat.kind, SeatKind::Human { user_id: None }) {
             String::new()
@@ -734,19 +788,22 @@ fn game_list_item(game: &Game, current: Uuid) -> String {
     )
 }
 
-fn open_game_list(games: &[&Game]) -> String {
+fn open_game_list(games: &[&Game], names: &crate::users::PlayerNames) -> String {
     let mut games = games.to_vec();
     games.sort_by_key(|game| std::cmp::Reverse(effective_updated_at(game)));
-    let rows: String = games.into_iter().map(open_game_list_item).collect();
+    let rows: String = games
+        .into_iter()
+        .map(|g| open_game_list_item(g, names))
+        .collect();
     format!(r#"<ul class="game-list open-game-list">{rows}</ul>"#)
 }
 
-fn open_game_list_item(game: &Game) -> String {
+fn open_game_list_item(game: &Game, names: &crate::users::PlayerNames) -> String {
     let players: Vec<_> = game
         .seats
         .iter()
         .filter(|s| !matches!(s.kind, SeatKind::Human { user_id: None }))
-        .map(|s| escape(&s.name))
+        .map(|s| escape(&names.seat(s)))
         .collect();
     let count = game.seats.iter().filter(|s| s.is_open()).count();
     let label = if count == 1 {

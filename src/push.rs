@@ -99,11 +99,16 @@ impl PushService {
     }
 
     pub async fn notify_turn(&self, users: &UserStore, game: &Game) {
-        let Some((user_id, player_name)) = current_human_turn(game) else {
+        let Some(user_id) = current_human_turn(game) else {
             return;
         };
-        let body = last_move_player(game)
-            .filter(|name| name != &player_name)
+        let names = users.player_names().await;
+        let body = game
+            .moves
+            .last()
+            .filter(|mv| mv.seat != game.turn)
+            .and_then(|mv| game.seats.get(mv.seat))
+            .map(|seat| names.seat(seat))
             .map(|name| format!("{name} just played. It is your turn."))
             .unwrap_or_else(|| "It is your turn in Scrabble.".to_string());
         let notification = GameNotification {
@@ -283,7 +288,7 @@ async fn send_one(
     inner.client.send(message.build()?).await
 }
 
-fn current_human_turn(game: &Game) -> Option<(Uuid, String)> {
+fn current_human_turn(game: &Game) -> Option<Uuid> {
     if game.status != GameStatus::Active {
         return None;
     }
@@ -291,12 +296,7 @@ fn current_human_turn(game: &Game) -> Option<(Uuid, String)> {
     match seat.kind {
         SeatKind::Human {
             user_id: Some(user),
-        } => Some((user, seat.name.clone())),
+        } => Some(user),
         SeatKind::Human { user_id: None } | SeatKind::Bot { .. } => None,
     }
-}
-
-fn last_move_player(game: &Game) -> Option<String> {
-    let last = game.moves.last()?;
-    game.seats.get(last.seat).map(|seat| seat.name.clone())
 }

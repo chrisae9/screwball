@@ -1,6 +1,8 @@
 use std::{
+    borrow::Cow,
     collections::{HashMap, HashSet},
     path::{Path, PathBuf},
+    sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -12,9 +14,8 @@ use webauthn_rs::prelude::Passkey;
 
 use crate::error::AppError;
 
-/// A registered player. Identity is established by passkeys only — there is no
-/// password. `username` is the unique login handle; `display_name` is shown in
-/// games and may be shared by multiple users.
+/// A registered player. `username` is the private passkey login or Authentik
+/// subject key. Games and sessions identify players by the stable UUID.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct User {
     pub id: Uuid,
@@ -30,6 +31,8 @@ pub struct User {
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct UserSettings {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub player_handle: Option<String>,
     #[serde(default)]
     pub auto_zoom: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -108,8 +111,56 @@ pub fn normalize_username(raw: &str) -> String {
     raw.trim().to_lowercase()
 }
 
+/// A cheap snapshot of public names, independent of sign-in and saved games.
+#[derive(Clone, Default)]
+pub struct PlayerNames(Arc<HashMap<Uuid, String>>);
+
+impl PlayerNames {
+    pub fn name<'a>(&'a self, id: Uuid, fallback: &'a str) -> &'a str {
+        self.0.get(&id).map(String::as_str).unwrap_or(fallback)
+    }
+
+    pub fn seat<'a>(&'a self, seat: &'a crate::models::Seat) -> Cow<'a, str> {
+        use crate::models::SeatKind;
+        if let SeatKind::Human { user_id: Some(id) } = seat.kind {
+            return Cow::Borrowed(self.name(id, &seat.name));
+        }
+        if let Some(invite) = &seat.invitation
+            && !invite.declined
+            && let Some(handle) = self.0.get(&invite.player)
+        {
+            return Cow::Owned(format!("{handle} (invited)"));
+        }
+        Cow::Borrowed(&seat.name)
+    }
+}
+
+#[derive(Serialize)]
+pub struct DirectoryPlayer {
+    pub id: Uuid,
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub handle: Option<String>,
+    pub avatar_id: u8,
+}
+
+fn normalize_public_handle(raw: &str) -> Result<String, AppError> {
+    let trimmed = raw.trim();
+    let name = trimmed.strip_prefix('@').unwrap_or(trimmed);
+    if !(3..=20).contains(&name.len())
+        || !name.as_bytes()[0].is_ascii_alphanumeric()
+        || !name.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'_')
+    {
+        return Err(AppError::bad_request(
+            "Use 3–20 letters, numbers or underscores. Start with a letter or number.",
+        ));
+    }
+    Ok(name.to_ascii_lowercase())
+}
+
 struct Index {
     by_id: HashMap<Uuid, User>,
+    names: PlayerNames,
     by_username: HashMap<String, Uuid>,
 }
 
@@ -155,8 +206,23 @@ impl UserStore {
             }
         }
 
+        let names = PlayerNames(Arc::new(
+            by_id
+                .values()
+                .filter_map(|u| {
+                    u.settings
+                        .player_handle
+                        .as_ref()
+                        .map(|handle| (u.id, format!("@{handle}")))
+                })
+                .collect(),
+        ));
         Ok(Self {
-            index: Mutex::new(Index { by_id, by_username }),
+            index: Mutex::new(Index {
+                by_id,
+                by_username,
+                names,
+            }),
             dir,
             hidden_player_handles: std::env::var("SCREWBALL_HIDDEN_PLAYER_UIDS")
                 .unwrap_or_default()
@@ -221,26 +287,39 @@ impl UserStore {
         }
     }
 
-    pub async fn search_players(&self, viewer: Uuid, query: &str) -> Vec<(Uuid, String, u8)> {
+    pub async fn player_names(&self) -> PlayerNames {
+        self.index.lock().await.names.clone()
+    }
+
+    pub async fn set_player_handle(&self, id: Uuid, raw: Option<&str>) -> Result<(), AppError> {
+        let handle = raw.map(normalize_public_handle).transpose()?;
+        self.update(id, |user| user.settings.player_handle = handle)
+            .await
+    }
+
+    pub async fn search_players(&self, viewer: Uuid, query: &str) -> Vec<DirectoryPlayer> {
         let query = query.trim().to_lowercase();
         let index = self.index.lock().await;
         let mut matches: Vec<_> = index
             .by_id
             .values()
-            .filter(|user| {
-                user.id != viewer
-                    && !self.hidden_player_handles.contains(&user.username)
-                    && user.display_name.to_lowercase().contains(&query)
+            .filter(|u| {
+                u.id != viewer
+                    && !self.hidden_player_handles.contains(&u.username)
+                    && (u.display_name.to_lowercase().contains(&query)
+                        || u.settings
+                            .player_handle
+                            .as_ref()
+                            .is_some_and(|h| h.contains(query.strip_prefix('@').unwrap_or(&query))))
             })
-            .map(|user| {
-                (
-                    user.id,
-                    user.display_name.clone(),
-                    user.settings.avatar(user.id),
-                )
+            .map(|u| DirectoryPlayer {
+                id: u.id,
+                name: u.display_name.clone(),
+                handle: u.settings.player_handle.clone(),
+                avatar_id: u.settings.avatar(u.id),
             })
             .collect();
-        matches.sort_by_key(|(id, name, _)| (name.to_lowercase(), *id));
+        matches.sort_by_cached_key(|p| (p.name.to_lowercase(), p.handle.clone(), p.id));
         matches
     }
 
@@ -286,6 +365,7 @@ impl UserStore {
             .ok_or_else(|| AppError::not_found("user not found"))?
             .clone();
         let old_key = normalize_username(&working.username);
+        let old_handle = working.settings.player_handle.clone();
         let outcome = f(&mut working);
         let new_key = normalize_username(&working.username);
         if new_key != old_key
@@ -296,7 +376,27 @@ impl UserStore {
         {
             return Err(AppError::conflict("that username is already taken"));
         }
+        let handle_changed = working.settings.player_handle != old_handle;
+        if handle_changed
+            && let Some(handle) = &working.settings.player_handle
+            && guard
+                .by_id
+                .values()
+                .any(|u| u.id != id && u.settings.player_handle.as_ref() == Some(handle))
+        {
+            return Err(AppError::conflict(
+                "That Scrabble username is taken. Try another.",
+            ));
+        }
         self.persist(&working).await?;
+        if handle_changed {
+            let names = Arc::make_mut(&mut guard.names.0);
+            if let Some(handle) = &working.settings.player_handle {
+                names.insert(id, format!("@{handle}"));
+            } else {
+                names.remove(&id);
+            }
+        }
         if new_key != old_key {
             guard.by_username.remove(&old_key);
             guard.by_username.insert(new_key, id);
@@ -363,11 +463,91 @@ mod tests {
         }
         let roster = store.search_players(viewer, "").await;
         assert_eq!(roster.len(), 16);
-        assert_eq!(roster[0].1, "Player 01");
-        assert_eq!(roster[15].1, "Player 16");
+        assert_eq!(roster[0].name, "Player 01");
+        assert_eq!(roster[15].name, "Player 16");
         assert_eq!(store.search_players(viewer, "6").await.len(), 2);
         assert!(store.invitable_player(hidden).await.is_none());
         assert!(store.get(hidden).await.is_some());
+    }
+
+    #[test]
+    fn public_username_validation_matches_its_display_format() {
+        assert_eq!(
+            normalize_public_handle("  @Tile_Fox  ").unwrap(),
+            "tile_fox"
+        );
+        for invalid in [
+            "",
+            "@",
+            "ab",
+            "_starts",
+            "a b",
+            "a-b",
+            "Éclair",
+            "@@fox",
+            "012345678901234567890",
+        ] {
+            assert!(normalize_public_handle(invalid).is_err(), "{invalid:?}");
+        }
+        assert_eq!(normalize_public_handle("1_2").unwrap(), "1_2");
+        assert!(normalize_public_handle("01234567890123456789").is_ok());
+    }
+
+    #[tokio::test]
+    async fn concurrent_handle_claims_and_renames_keep_authentik_identity_after_restart() {
+        let root = scratch_dir();
+        let store = UserStore::load(&root).await.unwrap();
+        let first = store
+            .authentik_profile("subject-one", "Alex")
+            .await
+            .unwrap();
+        let second = store
+            .authentik_profile("subject-two", "Alex")
+            .await
+            .unwrap();
+        let (a, b) = tokio::join!(
+            store.set_player_handle(first, Some("TileFox")),
+            store.set_player_handle(second, Some("@TILEFOX"))
+        );
+        assert_ne!(a.is_ok(), b.is_ok());
+        let (winner, other, uid) = if a.is_ok() {
+            (first, second, "subject-one")
+        } else {
+            (second, first, "subject-two")
+        };
+        assert_eq!(store.player_names().await.name(winner, "Alex"), "@tilefox");
+        assert_eq!(store.player_names().await.name(other, "Alex"), "Alex");
+        store
+            .set_player_handle(winner, Some("Word_Bird"))
+            .await
+            .unwrap();
+        store
+            .set_player_handle(other, Some("TileFox"))
+            .await
+            .unwrap();
+        assert!(store.get_by_username("word_bird").await.is_none());
+        drop(store);
+        let store = UserStore::load(&root).await.unwrap();
+        assert_eq!(
+            store
+                .authentik_profile(uid, "New upstream label")
+                .await
+                .unwrap(),
+            winner
+        );
+        assert_eq!(
+            store.player_names().await.name(winner, "Alex"),
+            "@word_bird"
+        );
+        let matches = store.search_players(other, "@Word_B").await;
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].id, winner);
+        assert_eq!(matches[0].name, "Alex");
+        assert_eq!(matches[0].handle.as_deref(), Some("word_bird"));
+        assert!(store.search_players(other, uid).await.is_empty());
+        store.set_player_handle(winner, None).await.unwrap();
+        assert_eq!(store.player_names().await.name(winner, "Alex"), "Alex");
+        tokio::fs::remove_dir_all(root).await.unwrap();
     }
 
     #[tokio::test]

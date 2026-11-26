@@ -54,7 +54,7 @@ function playerPicker(label, choose, otherSeats) {
   const panel = document.createElement("details");
   panel.className = "player-picker";
   panel.innerHTML = `<summary><span class="picker-title">Choose a player</span><span class="picker-action"></span></summary>
-    <div class="picker-content"><input type="search" placeholder="Filter by name" autocomplete="off">
+    <div class="picker-content"><input type="search" placeholder="Filter by name or @username" autocomplete="off">
     <ul class="picker-roster" aria-label="Available players"></ul><div class="picker-status" role="status"></div></div>`;
   const summary = panel.querySelector("summary");
   const title = panel.querySelector(".picker-title");
@@ -71,7 +71,7 @@ function playerPicker(label, choose, otherSeats) {
     selected = player;
     summary.querySelector(".player-avatar")?.remove();
     if (player) summary.prepend(playerAvatar(player.avatar_id));
-    title.textContent = player ? player.name : "Choose a player";
+    title.textContent = player ? (player.handle ? "@" + player.handle : player.name) : "Choose a player";
     action.textContent = player ? "Change" : "";
     choose(player);
   }
@@ -81,13 +81,22 @@ function playerPicker(label, choose, otherSeats) {
     const excluded = otherSeats();
     const rows = [];
     for (const player of players) {
-      if (excluded.has(player.id) || !player.name.toLowerCase().includes(query)) continue;
+      const matches = player.name.toLowerCase().includes(query)
+        || (player.handle && ("@" + player.handle).includes(query));
+      if (excluded.has(player.id) || !matches) continue;
       const row = document.createElement("li");
       const button = document.createElement("button");
       button.type = "button";
       button.className = "picker-choice";
       const name = document.createElement("span");
-      name.textContent = counts.get(player.name) > 1 ? player.name + " · " + player.id.slice(0, 6) : player.name;
+      if (player.handle) {
+        name.textContent = "@" + player.handle;
+        const displayName = document.createElement("small");
+        displayName.textContent = player.name;
+        name.append(displayName);
+      } else {
+        name.textContent = counts.get(player.name) > 1 ? player.name + " · " + player.id.slice(0, 6) : player.name;
+      }
       button.append(playerAvatar(player.avatar_id), name);
       if (player.id === selected?.id) button.setAttribute("aria-current", "true");
       button.addEventListener("click", () => {

@@ -92,7 +92,7 @@ pub struct MoveView {
 }
 
 impl GameView {
-    pub fn for_viewer(game: &Game, viewer: Uuid) -> Self {
+    pub fn for_viewer(game: &Game, viewer: Uuid, names: &crate::users::PlayerNames) -> Self {
         let your_seat = game
             .seats
             .iter()
@@ -106,7 +106,7 @@ impl GameView {
             .enumerate()
             .map(|(index, seat)| SeatView {
                 index,
-                name: seat.name.clone(),
+                name: names.seat(seat).into_owned(),
                 kind: match seat.kind {
                     SeatKind::Bot { .. } => "bot",
                     SeatKind::Human { .. } => "human",
@@ -193,7 +193,11 @@ pub struct GameSummary {
 
 impl GameSummary {
     /// Build a summary for `viewer`, or `None` when they aren't seated.
-    pub fn for_viewer(game: &Game, viewer: Uuid) -> Option<Self> {
+    pub fn for_viewer(
+        game: &Game,
+        viewer: Uuid,
+        names: &crate::users::PlayerNames,
+    ) -> Option<Self> {
         let your_seat = game
             .seats
             .iter()
@@ -202,7 +206,11 @@ impl GameSummary {
         let effective_updated_at = effective_updated_at(game);
         Some(Self {
             id: game.id,
-            players: game.seats.iter().map(|seat| seat.name.clone()).collect(),
+            players: game
+                .seats
+                .iter()
+                .map(|seat| names.seat(seat).into_owned())
+                .collect(),
             status: match game.status {
                 GameStatus::Lobby => "lobby",
                 GameStatus::Active => "active",

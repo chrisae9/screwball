@@ -11,7 +11,7 @@ use axum::{
     extract::{Path, Query, State},
     response::{Html, Redirect},
 };
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use uuid::Uuid;
 
 #[derive(Deserialize)]
@@ -21,18 +21,11 @@ pub struct Search {
     game: Option<Uuid>,
 }
 
-#[derive(Serialize)]
-pub struct Player {
-    id: Uuid,
-    name: String,
-    avatar_id: u8,
-}
-
 pub async fn search(
     State(state): State<AppState>,
     ApiAuthUser(user): ApiAuthUser,
     Query(query): Query<Search>,
-) -> Result<Json<Vec<Player>>, AppError> {
+) -> Result<Json<Vec<crate::users::DirectoryPlayer>>, AppError> {
     let game = if let Some(id) = query.game {
         let game = state
             .store
@@ -52,15 +45,10 @@ pub async fn search(
             .search_players(user, &query.q)
             .await
             .into_iter()
-            .filter(|(id, _, _)| {
+            .filter(|p| {
                 game.as_ref().is_none_or(|game| {
-                    !is_user_seated(game, *id) && !game.seats.iter().any(|seat| seat.invited(*id))
+                    !is_user_seated(game, p.id) && !game.seats.iter().any(|seat| seat.invited(p.id))
                 })
-            })
-            .map(|(id, name, avatar_id)| Player {
-                id,
-                name,
-                avatar_id,
             })
             .collect(),
     ))
@@ -140,9 +128,10 @@ pub async fn send(
         })
         .await??;
     if let Some(sender) = sender {
+        let names = state.users.player_names().await;
         state
             .push
-            .notify_invite(&state.users, player.id, id, &sender)
+            .notify_invite(&state.users, player.id, id, names.name(host, &sender))
             .await;
     }
     Ok(Redirect::to(&format!("/games/{id}")))
@@ -171,13 +160,17 @@ pub async fn decline(
     Ok(Redirect::to("/"))
 }
 
-pub fn inbox_html<'a>(games: impl Iterator<Item = &'a Game>, user: Uuid) -> String {
+pub fn inbox_html<'a>(
+    games: impl Iterator<Item = &'a Game>,
+    user: Uuid,
+    names: &crate::users::PlayerNames,
+) -> String {
     let mut html = String::new();
     for game in games
         .filter(|g| g.status != GameStatus::Finished && g.seats.iter().any(|s| s.invited(user)))
     {
         let id = game.id;
-        let host = render::escape(&game.seats[0].name);
+        let host = render::escape(&names.seat(&game.seats[0]));
         html.push_str(&format!(r#"<article class="invite-row"><p><strong>{host}</strong> invited you to play Scrabble.</p>
 <div class="invite-actions"><form action="/games/{id}/join" method="post"><button class="button">Accept invitation</button></form>
 <form action="/games/{id}/decline" method="post"><button class="button button-secondary">Decline</button></form></div></article>"#));
@@ -230,6 +223,10 @@ pub async fn inbox(
             ("x-scrabble-away", away.is_active().to_string()),
             ("x-scrabble-away-state", away.token()),
         ],
-        Html(inbox_html(games.iter().map(AsRef::as_ref), user)),
+        Html(inbox_html(
+            games.iter().map(AsRef::as_ref),
+            user,
+            &state.users.player_names().await,
+        )),
     )
 }
