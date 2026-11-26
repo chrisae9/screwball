@@ -29,17 +29,19 @@ function saveDraft() {
   } catch { /* The composer still works when browser storage is unavailable. */ }
 }
 
-function restoreDraft() {
+function restoreDraft(keepTypedText = false) {
   try {
     const draft = JSON.parse(sessionStorage.getItem(draftKey));
-    input.value = typeof draft?.text === "string" ? draft.text : "";
-    retry = typeof draft?.retry?.id === "string" && typeof draft.retry.text === "string"
+    if (!keepTypedText) input.value = typeof draft?.text === "string" ? draft.text : "";
+    retry = typeof draft?.retry?.id === "string" && draft.retry.text === input.value.trim()
       ? draft.retry : null;
-    status.textContent = retry?.text === input.value.trim() ? retryHint : "";
+    status.textContent = retry ? retryHint : "";
   } catch { /* Leave the live composer alone if storage is unavailable. */ }
+  if (keepTypedText) saveDraft();
 }
 
-restoreDraft();
+// The HTML composer accepts typing before this deferred module initializes.
+restoreDraft(input.value !== "");
 window.addEventListener("pageshow", event => { if (event.persisted) restoreDraft(); });
 input.addEventListener("input", () => {
   if (!input.value) retry = null;

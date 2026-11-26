@@ -23,6 +23,54 @@ async function reopenFromBoard(page, path) {
   await expect(page.getByRole("heading", {name: "Game chat"})).toBeVisible();
 }
 
+async function typeBeforeChatLoads(page, game, text) {
+  let release;
+  const held = new Promise(resolve => { release = resolve; });
+  await page.route("**/public/chat.js*", async route => {
+    await held;
+    await route.continue();
+  }, {times:1});
+  const input = page.getByRole("textbox", {name:"Message"});
+  try {
+    await page.goto(game + "/chat", {waitUntil:"commit"});
+    await input.fill(text);
+  } finally { release(); }
+  await page.waitForLoadState("load");
+  await expect(input).toHaveValue(text);
+}
+
+test("typing during chat startup survives reload and supersedes a different pending send", async ({page, request}) => {
+  const [, guest] = await Promise.all([register(page.request), register(request)]);
+  const game = await createGame(page.request, guest);
+  const input = page.getByRole("textbox", {name:"Message"});
+  await typeBeforeChatLoads(page, game, "First thought");
+  await page.reload();
+  await expect(input).toHaveValue("First thought");
+
+  const ids = [];
+  await page.route("**/api" + game + "/chat", async route => {
+    if (route.request().method() !== "POST") return route.continue();
+    ids.push(route.request().postDataJSON().id);
+    if (ids.length === 1) return route.abort("failed");
+    return route.continue();
+  });
+  const send = page.getByRole("button", {name:"Send"});
+  await send.click();
+  await expect(page.locator(".chat-status")).toContainText("confirm delivery");
+  await typeBeforeChatLoads(page, game, "A different idea");
+  await expect(page.locator(".chat-status")).toBeEmpty();
+  // A thawed page must still reconcile its older DOM with the saved room draft.
+  await input.evaluate(el => {
+    el.value = "Stale cached page";
+    window.dispatchEvent(new PageTransitionEvent("pageshow", {persisted:true}));
+  });
+  await expect(input).toHaveValue("A different idea");
+  await send.click();
+  await expect(input).toBeEmpty();
+  expect(ids).toHaveLength(2);
+  expect(ids[1]).not.toBe(ids[0]);
+});
+
 test("a chat draft follows its player and game through board navigation", async ({page, browser, baseURL}) => {
   const other = await browser.newContext({baseURL});
   try {
@@ -77,7 +125,8 @@ test("a lost send acknowledgement can be retried after leaving without posting t
   await input.fill(text);
   await send.click();
   await expect(page.locator(".chat-status")).toContainText("confirm delivery");
-  await reopenFromBoard(page, game);
+  await page.goto(game);
+  await typeBeforeChatLoads(page, game, text);
   await expect(input).toHaveValue(text);
   await expect(page.locator(".chat-status")).toContainText("confirm delivery");
   await send.click();
