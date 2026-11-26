@@ -109,6 +109,55 @@ impl UserStore {
         self.index.lock().await.by_id.get(&id).cloned()
     }
 
+    /// Use the same identity for roster provisioning and first sign-in.
+    pub async fn authentik_profile(&self, uid: &str, name: &str) -> Result<Uuid, AppError> {
+        let username = format!("ak-{uid}");
+        if let Some(user) = self.get_by_username(&username).await {
+            return Ok(user.id);
+        }
+        let id = Uuid::new_v4();
+        let user = User {
+            id,
+            username: username.clone(),
+            display_name: name
+                .split('@')
+                .next()
+                .unwrap_or("Player")
+                .chars()
+                .take(48)
+                .collect(),
+            credentials: vec![],
+            push_subscriptions: vec![],
+            settings: UserSettings { auto_zoom: true },
+            created_at: Utc::now(),
+        };
+        match self.insert(user).await {
+            Ok(()) => Ok(id),
+            Err(err) => self
+                .get_by_username(&username)
+                .await
+                .map(|user| user.id)
+                .ok_or(err),
+        }
+    }
+
+    pub async fn search_players(&self, viewer: Uuid, query: &str) -> Vec<(Uuid, String)> {
+        let query = query.trim().to_lowercase();
+        if query.chars().count() < 2 {
+            return Vec::new();
+        }
+        let index = self.index.lock().await;
+        let mut matches: Vec<_> = index
+            .by_id
+            .values()
+            .filter(|user| user.id != viewer && user.display_name.to_lowercase().contains(&query))
+            .map(|user| (user.id, user.display_name.clone()))
+            .collect();
+        matches.sort_by_key(|(id, name)| (name.to_lowercase(), *id));
+        matches.truncate(12);
+        matches
+    }
+
     pub async fn count(&self) -> usize {
         self.index.lock().await.by_id.len()
     }

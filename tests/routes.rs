@@ -124,7 +124,7 @@ fn get(uri: &str, cookie: Option<&str>) -> Request<Body> {
     builder.body(Body::empty()).unwrap()
 }
 
-fn post_form(uri: &str, cookie: Option<&str>, body: &'static str) -> Request<Body> {
+fn post_form(uri: &str, cookie: Option<&str>, body: &str) -> Request<Body> {
     let mut builder = Request::builder()
         .method("POST")
         .uri(uri)
@@ -132,7 +132,7 @@ fn post_form(uri: &str, cookie: Option<&str>, body: &'static str) -> Request<Bod
     if let Some(cookie) = cookie {
         builder = builder.header(header::COOKIE, cookie);
     }
-    builder.body(Body::from(body)).unwrap()
+    builder.body(Body::from(body.to_owned())).unwrap()
 }
 
 fn post_json(uri: &str, cookie: Option<&str>, body: String) -> Request<Body> {
@@ -853,4 +853,79 @@ async fn join_sets_display_name_on_open_seat() {
     assert_eq!(view["your_seat"], json!(1));
     assert_eq!(view["seats"][1]["name"], "Guest");
     assert_eq!(view["seats"][1]["open"], json!(false));
+}
+
+#[tokio::test]
+async fn invitations_reserve_seats_across_retries_and_declines() {
+    let app = test_app().await;
+    let (_, host) = app.register("host", "Host").await;
+    let (a, first) = app.register("first", "First").await;
+    let (b, second) = app.register("second", "Second").await;
+    let post = |path: &str, cookie: &str, form: &str| {
+        app.router().oneshot(post_form(path, Some(cookie), form))
+    };
+    let created = post("/games", &host, "seat2=open").await.unwrap();
+    let game = created.headers()[header::LOCATION].to_str().unwrap();
+    let send = format!("{game}/invite");
+    let join = format!("{game}/join");
+    let decline = format!("{game}/decline");
+    assert!(
+        !post(&send, &second, &format!("player={a}"))
+            .await
+            .unwrap()
+            .status()
+            .is_redirection()
+    );
+    for _ in 0..2 {
+        assert_eq!(
+            post(&send, &host, &format!("player={a}"))
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::SEE_OTHER
+        );
+    }
+    assert!(
+        !post(&join, &second, "")
+            .await
+            .unwrap()
+            .status()
+            .is_redirection()
+    );
+    assert!(
+        !post(&decline, &second, "")
+            .await
+            .unwrap()
+            .status()
+            .is_redirection()
+    );
+    assert_eq!(
+        post(&decline, &first, "").await.unwrap().status(),
+        StatusCode::SEE_OTHER
+    );
+    assert!(
+        !post(&join, &first, "")
+            .await
+            .unwrap()
+            .status()
+            .is_redirection()
+    );
+    assert_eq!(
+        post(&send, &host, &format!("player={b}"))
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::SEE_OTHER
+    );
+    assert_eq!(
+        post(&join, &second, "").await.unwrap().status(),
+        StatusCode::SEE_OTHER
+    );
+    let state = app
+        .router()
+        .oneshot(get(&format!("{game}/state"), Some(&second)))
+        .await
+        .unwrap();
+    let view: Value = serde_json::from_str(&body_string(state).await).unwrap();
+    assert_eq!(view["your_seat"], 1);
 }

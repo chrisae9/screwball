@@ -125,6 +125,7 @@ pub fn new_game(seats: Vec<SeatSpec>, options: GameOptions, rng: &mut impl Rng) 
         .map(|spec| {
             let rack = bag::draw(&mut bag, RACK_SIZE);
             Seat {
+                invitation: None,
                 id: Uuid::new_v4(),
                 kind: spec.kind,
                 name: spec.name,

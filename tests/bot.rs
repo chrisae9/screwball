@@ -25,6 +25,7 @@ fn bot_game(racks: &[&str], difficulty: Difficulty) -> Game {
         .iter()
         .enumerate()
         .map(|(i, letters)| Seat {
+            invitation: None,
             id: Uuid::new_v4(),
             kind: SeatKind::Bot { difficulty },
             name: format!("Bot {i}"),

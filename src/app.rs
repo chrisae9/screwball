@@ -60,6 +60,13 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/games", post(routes::create_game))
         .route("/games/new", get(routes::new_game_page))
+        .route("/api/players", get(crate::invitations::search))
+        .route("/api/invitations", get(crate::invitations::inbox))
+        .route(
+            "/games/{id}/invite",
+            get(crate::invitations::page).post(crate::invitations::send),
+        )
+        .route("/games/{id}/decline", post(crate::invitations::decline))
         .route("/api/my-games", get(routes::my_games))
         .route("/api/push/vapid-public-key", get(routes::push_public_key))
         .route("/api/push/debug", get(routes::push_debug_status))
@@ -97,7 +104,6 @@ const INSTALL_ASSETS: &[&str] = &[
 
 // Enabled only behind the header-clearing Authentik gateway and its ingress policy.
 async fn authentik_player(State(state): State<AppState>, req: Request, next: Next) -> Response {
-    use crate::users::{User, UserSettings};
     use axum::http::{Method, StatusCode};
     use axum::response::{IntoResponse, Redirect};
 
@@ -127,35 +133,13 @@ async fn authentik_player(State(state): State<AppState>, req: Request, next: Nex
     if path.starts_with("/auth/") {
         return StatusCode::NOT_FOUND.into_response();
     }
-    let username = format!("ak-{uid}");
-    let display_name: String = header("x-authentik-name")
-        .unwrap_or("Player")
-        .split('@')
-        .next()
-        .unwrap_or("Player")
-        .chars()
-        .take(48)
-        .collect();
-    let player = if let Some(user) = state.users.get_by_username(&username).await {
-        user.id
-    } else {
-        let id = uuid::Uuid::new_v4();
-        let user = User {
-            id,
-            username: username.clone(),
-            display_name,
-            credentials: vec![],
-            push_subscriptions: vec![],
-            settings: UserSettings { auto_zoom: true },
-            created_at: chrono::Utc::now(),
-        };
-        match state.users.insert(user).await {
-            Ok(()) => id,
-            Err(err) => match state.users.get_by_username(&username).await {
-                Some(user) => user.id,
-                None => return err.into_response(),
-            },
-        }
+    let player = match state
+        .users
+        .authentik_profile(uid, header("x-authentik-name").unwrap_or("Player"))
+        .await
+    {
+        Ok(player) => player,
+        Err(err) => return err.into_response(),
     };
     parts.extensions.insert(crate::session::AuthUser(player));
     next.run(Request::from_parts(parts, body)).await
@@ -248,6 +232,16 @@ pub async fn run() -> Result<()> {
     let defs = Arc::new(DefinitionCache::from_words(&dict_source));
     let store = Arc::new(GameStore::load(&data_path).await?);
     let users = Arc::new(UserStore::load(&data_path).await?);
+    // Pre-approved players can receive an invitation before their first visit.
+    if env_flag("SCREWBALL_AUTHENTIK")
+        && let Ok(raw) = env::var("SCREWBALL_INVITABLE_PLAYERS")
+    {
+        let roster: std::collections::BTreeMap<String, String> =
+            serde_json::from_str(&raw).context("invalid invitable player roster")?;
+        for (uid, name) in roster {
+            users.authentik_profile(&uid, &name).await?;
+        }
+    }
     tracing::info!("loaded {} registered users", users.count().await);
 
     let webauthn = Arc::new(build_webauthn()?);
@@ -311,6 +305,7 @@ fn asset_version() -> String {
         "public/scrabble-512.png",
         "public/app.css",
         "public/game.js",
+        "public/players.js",
         "public/auth.js",
         "public/touch-debug.js",
         "public/sw.js",

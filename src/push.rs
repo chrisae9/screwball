@@ -30,7 +30,7 @@ struct PushServiceInner {
 }
 
 #[derive(Serialize)]
-struct TurnNotification<'a> {
+struct GameNotification<'a> {
     title: &'a str,
     body: String,
     url: String,
@@ -93,45 +93,71 @@ impl PushService {
     }
 
     pub async fn notify_turn(&self, users: &UserStore, game: &Game) {
-        let Some(inner) = &self.inner else {
-            return;
-        };
         let Some((user_id, player_name)) = current_human_turn(game) else {
             return;
         };
-        let Some(user) = users.get(user_id).await else {
-            return;
-        };
-        if user.push_subscriptions.is_empty() {
-            return;
-        }
-
         let body = last_move_player(game)
             .filter(|name| name != &player_name)
             .map(|name| format!("{name} just played. It is your turn."))
             .unwrap_or_else(|| "It is your turn in Scrabble.".to_string());
-        let notification = TurnNotification {
+        let notification = GameNotification {
             title: "Your turn!",
             body,
             url: format!("/games/{}", game.id),
             tag: format!("turn-{}", game.id),
         };
+        self.deliver(users, user_id, game.id, notification).await;
+    }
+
+    pub async fn notify_invite(
+        &self,
+        users: &UserStore,
+        user_id: Uuid,
+        game_id: Uuid,
+        sender: &str,
+    ) {
+        self.deliver(
+            users,
+            user_id,
+            game_id,
+            GameNotification {
+                title: "Scrabble invitation",
+                body: format!("{sender} invited you to play Scrabble."),
+                url: "/#invitations".to_string(),
+                tag: format!("invite-{game_id}"),
+            },
+        )
+        .await;
+    }
+
+    async fn deliver(
+        &self,
+        users: &UserStore,
+        user_id: Uuid,
+        game_id: Uuid,
+        notification: GameNotification<'_>,
+    ) {
+        let Some(inner) = &self.inner else {
+            return;
+        };
+        let Some(user) = users.get(user_id).await else {
+            return;
+        };
         let payload = match serde_json::to_vec(&notification) {
             Ok(payload) => payload,
             Err(err) => {
-                tracing::warn!(error = %err, game_id = %game.id, "could not serialize push payload");
+                tracing::warn!(error = %err, %game_id, "could not serialize push payload");
                 return;
             }
         };
 
-        let topic = game.id.simple().to_string();
+        let topic = game_id.simple().to_string();
         for subscription in user.push_subscriptions {
             if let Err(err) = send_one(inner, &subscription, &topic, &payload).await {
                 tracing::warn!(
                     error = %err,
-                    game_id = %game.id,
+                    %game_id,
                     user_id = %user_id,
-                    endpoint = %subscription.endpoint,
                     "web push send failed"
                 );
             }
@@ -154,7 +180,7 @@ impl PushService {
             .map(|user| user.push_subscriptions)
             .unwrap_or_default();
 
-        let notification = TurnNotification {
+        let notification = GameNotification {
             title: "Scrabble notification test",
             body: "If you can see this, server push is working.".to_string(),
             url: "/debug/notifications".to_string(),

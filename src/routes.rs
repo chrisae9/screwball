@@ -37,7 +37,7 @@ fn viewer_id(user: Option<Uuid>) -> Uuid {
 
 pub async fn index(State(state): State<AppState>, MaybeUser(user): MaybeUser) -> Html<String> {
     let Some(user) = user else {
-        return Html(render::home_page(&[], &[], None, None));
+        return Html(render::home_page(&[], &[], None, None, ""));
     };
     let games = state.store.list().await;
     let mine: Vec<Game> = games
@@ -49,7 +49,7 @@ pub async fn index(State(state): State<AppState>, MaybeUser(user): MaybeUser) ->
         .iter()
         .filter(|game| game.status != GameStatus::Finished)
         .filter(|game| !is_user_seated(game, user))
-        .filter(|game| has_open_seat(game))
+        .filter(|game| has_open_seat(game) && !game.seats.iter().any(|s| s.invited(user)))
         .cloned()
         .collect();
     let display_name = state.users.get(user).await.map(|u| u.display_name);
@@ -58,10 +58,11 @@ pub async fn index(State(state): State<AppState>, MaybeUser(user): MaybeUser) ->
         &joinable,
         Some(user),
         display_name.as_deref(),
+        &crate::invitations::inbox_html(&games, user),
     ))
 }
 
-fn is_user_seated(game: &Game, user: Uuid) -> bool {
+pub(crate) fn is_user_seated(game: &Game, user: Uuid) -> bool {
     game.seats.iter().any(|seat| match seat.kind {
         SeatKind::Human { user_id } => user_id == Some(user),
         SeatKind::Bot { .. } => false,
@@ -69,9 +70,7 @@ fn is_user_seated(game: &Game, user: Uuid) -> bool {
 }
 
 fn has_open_seat(game: &Game) -> bool {
-    game.seats
-        .iter()
-        .any(|seat| matches!(seat.kind, SeatKind::Human { user_id: None }))
+    game.seats.iter().any(|seat| seat.is_open())
 }
 
 pub async fn healthcheck() -> &'static str {
@@ -160,10 +159,31 @@ pub async fn create_game(
         kind: SeatKind::Human {
             user_id: Some(user),
         },
-        name: your_name,
+        name: your_name.clone(),
     }];
+    let mut invitations = Vec::new();
     for raw in [form.seat2, form.seat3, form.seat4].into_iter().flatten() {
-        if let Some(spec) = seat_spec(&raw) {
+        if let Some(target) = raw.strip_prefix("invite:") {
+            let target = Uuid::parse_str(target)
+                .map_err(|_| AppError::bad_request("Choose a player to invite"))?;
+            if target == user || invitations.iter().any(|(_, id)| *id == target) {
+                return Err(AppError::bad_request(
+                    "Choose a different player for each seat",
+                ));
+            }
+            let recipient = state
+                .users
+                .get(target)
+                .await
+                .ok_or_else(|| AppError::not_found("Player not found"))?;
+            invitations.push((specs.len(), target));
+            specs.push(SeatSpec {
+                kind: SeatKind::Human { user_id: None },
+                name: format!("{} (invited)", recipient.display_name),
+            });
+        } else if raw == "invite" {
+            return Err(AppError::bad_request("Select a player to invite"));
+        } else if let Some(spec) = seat_spec(&raw) {
             specs.push(spec);
         }
     }
@@ -184,7 +204,13 @@ pub async fn create_game(
         mimi_mode: form.mimi_mode.is_some(),
         hints_allowed: form.hints.unwrap_or(0).min(3),
     };
-    let game = game::new_game(specs, options, &mut rand::thread_rng());
+    let mut game = game::new_game(specs, options, &mut rand::thread_rng());
+    for &(seat, player) in &invitations {
+        game.seats[seat].invitation = Some(crate::models::SeatInvitation {
+            player,
+            declined: false,
+        });
+    }
     let id = game.id;
     state.store.insert(game).await?;
 
@@ -192,6 +218,12 @@ pub async fn create_game(
     let dict = state.dict.clone();
     state.store.update(id, |game| run_bots(game, &dict)).await?;
 
+    for (_, player) in invitations {
+        state
+            .push
+            .notify_invite(&state.users, player, id, &your_name)
+            .await;
+    }
     Ok(Redirect::to(&format!("/games/{id}")))
 }
 
@@ -438,25 +470,29 @@ pub async fn join_game(
     state
         .store
         .update(id, |game| {
-            let already = game.seats.iter().any(|seat| match seat.kind {
-                SeatKind::Human { user_id } => user_id == Some(user),
-                SeatKind::Bot { .. } => false,
-            });
-            if !already
-                && let Some(seat) = game
-                    .seats
-                    .iter_mut()
-                    .find(|seat| matches!(seat.kind, SeatKind::Human { user_id: None }))
-            {
-                seat.kind = SeatKind::Human {
-                    user_id: Some(user),
-                };
-                if let Some(name) = &name {
-                    seat.name = name.clone();
-                }
+            if is_user_seated(game, user) {
+                return Ok(());
             }
+            if game.status == GameStatus::Finished {
+                return Err(AppError::bad_request("This game is over"));
+            }
+            let index = game
+                .seats
+                .iter()
+                .position(|s| s.invited(user))
+                .or_else(|| game.seats.iter().position(|s| s.is_open()))
+                .ok_or_else(|| AppError::bad_request("No seat is available for you"))?;
+            let seat = &mut game.seats[index];
+            seat.invitation = None;
+            seat.kind = SeatKind::Human {
+                user_id: Some(user),
+            };
+            if let Some(name) = name {
+                seat.name = name;
+            }
+            Ok(())
         })
-        .await?;
+        .await??;
     Ok(Redirect::to(&format!("/games/{id}")))
 }
 

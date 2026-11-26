@@ -55,10 +55,16 @@ pub fn escape(input: &str) -> String {
 }
 
 pub fn layout(title: &str, body: &str) -> String {
-    layout_with_head(title, body, "", "")
+    layout_with_head(title, body, "", "", "")
 }
 
-fn layout_with_head(title: &str, body: &str, head_extra: &str, body_class: &str) -> String {
+fn layout_with_head(
+    title: &str,
+    body: &str,
+    head_extra: &str,
+    body_class: &str,
+    nav_actions: &str,
+) -> String {
     format!(
         r#"<!doctype html>
 <html lang="en">
@@ -73,14 +79,13 @@ fn layout_with_head(title: &str, body: &str, head_extra: &str, body_class: &str)
   <link rel="apple-touch-icon" sizes="180x180" href="{touch_icon}">
   <link rel="manifest" href="{manifest}">
   <link rel="stylesheet" href="{css}">
+  <script type="module" src="{players_js}"></script>
   {head_extra}
 </head>
 <body class="{body_class}">
   <nav class="nav">
-  <a class="brand" href="/" aria-label="Scrabble home">
-    <img class="brand-icon" src="{favicon}" alt="">
-  </a>
-  <div class="nav-links"></div>
+  {back}
+  <div class="nav-links">{nav_actions}</div>
 </nav>
   <main class="page">
   {body}
@@ -90,6 +95,15 @@ fn layout_with_head(title: &str, body: &str, head_extra: &str, body_class: &str)
         title = escape(title),
         css = asset("/public/app.css"),
         favicon = asset("/public/favicon.svg"),
+        players_js = asset("/public/players.js"),
+        back = if title == "Scrabble" {
+            format!(
+                r#"<a class="brand" href="/" aria-label="Scrabble home"><img class="brand-icon" src="{}" alt=""></a>"#,
+                asset("/public/favicon.svg")
+            )
+        } else {
+            r#"<a class="back-link" href="/" aria-label="Back to games"><span aria-hidden="true">‹</span> Back</a>"#.to_string()
+        },
         touch_icon = asset("/public/apple-touch-icon.png"),
         manifest = asset("/public/manifest.webmanifest"),
         head_extra = head_extra,
@@ -118,6 +132,7 @@ pub fn home_page(
     joinable_games: &[Game],
     current: Option<Uuid>,
     display_name: Option<&str>,
+    invitations: &str,
 ) -> String {
     let Some(current) = current else {
         return layout_with_head(
@@ -127,6 +142,7 @@ pub fn home_page(
                 r#"<script type="module" src="{}" defer></script>"#,
                 asset("/public/auth.js")
             ),
+            "",
             "",
         );
     };
@@ -161,6 +177,8 @@ pub fn home_page(
     <button type="submit" class="button button-secondary">Sign out</button>
   </form>
 </section>
+<section class="card" id="invitations" aria-live="polite">{invitations}</section>
+<details id="install-guide" class="card" hidden><summary>Install Scrabble on your phone</summary><ol></ol></details>
 {open_games}
 <section class="card">
   <h1>Your games</h1>
@@ -179,9 +197,19 @@ pub fn new_game_page() -> String {
             r#"<section class="card">
   <h1>New game</h1>
   {form}
-  <p class="muted"><a href="/">Back home</a></p>
 </section>"#,
             form = new_game_form(),
+        ),
+    )
+}
+
+pub fn invite_page(id: Uuid) -> String {
+    layout(
+        "Invite a player — Scrabble",
+        &format!(
+            r#"<section class="card"><h1>Invite a player</h1>
+<form class="form" data-invite-form method="post" action="/games/{id}/invite"><input name="player" type="hidden">
+<button class="button">Send invitation</button></form><p><a href="/games/{id}">Return to game</a></p></section>"#
         ),
     )
 }
@@ -214,6 +242,7 @@ pub fn settings_page(auto_zoom: bool) -> String {
             r#"<script type="module" src="{}" defer></script>"#,
             asset("/public/settings.js")
         ),
+        "",
         "",
     )
 }
@@ -258,6 +287,7 @@ pub fn notification_debug_page() -> String {
             r#"<script type="module" src="{}" defer></script>"#,
             asset("/public/notification-debug.js")
         ),
+        "",
         "",
     )
 }
@@ -334,6 +364,7 @@ pub fn touch_debug_page() -> String {
             asset("/public/touch-debug.js")
         ),
         "touch-debug-page",
+        "",
     )
 }
 
@@ -372,6 +403,7 @@ fn new_game_form() -> String {
         let off = if selected_off { " selected" } else { "" };
         format!(
             r#"<option value="off"{off}>— none —</option>
+<option value="invite">Invite a player…</option>
 <option value="open">Open seat (human)</option>
 <option value="easy">Easy bot</option>
 <option value="chill">Chill bot</option>
@@ -467,8 +499,8 @@ fn new_game_form() -> String {
   <button type="submit" class="button">Create game</button>
 </form>"#,
         seat2 = options(false).replace(
-            "<option value=\"medium\">Medium bot</option>",
-            "<option value=\"medium\" selected>Medium bot</option>"
+            "<option value=\"invite\">Invite a player…</option>",
+            "<option value=\"invite\" selected>Invite a player…</option>"
         ),
         seat3 = options(true),
         seat4 = options(true),
@@ -612,6 +644,14 @@ pub fn game_page(
         asset("/public/game.js")
     );
     let head = head.as_str();
+    let invite_link = if view.can_invite {
+        format!(
+            r#"<a class="invite-game-link" href="/games/{}/invite">Invite player</a>"#,
+            view.id
+        )
+    } else {
+        String::new()
+    };
     let sign_in = if logged_in {
         String::new()
     } else {
@@ -653,7 +693,7 @@ pub fn game_page(
     } else {
         format!("{} — Scrabble", names.join(" vs "))
     };
-    layout_with_head(&title, &body, head, "game-page")
+    layout_with_head(&title, &body, head, "game-page", &invite_link)
 }
 
 fn render_join_form(view: &GameView) -> String {

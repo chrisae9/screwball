@@ -19,6 +19,7 @@ pub fn effective_updated_at(game: &Game) -> DateTime<Utc> {
 /// contents are redacted to tile counts only.
 #[derive(Serialize)]
 pub struct GameView {
+    pub can_invite: bool,
     pub id: Uuid,
     pub status: GameStatus,
     pub turn: usize,
@@ -118,7 +119,8 @@ impl GameView {
                 rack_count: seat.rack.len(),
                 on_turn: game.status == GameStatus::Active && game.turn == index,
                 is_you: Some(index) == your_seat,
-                open: matches!(seat.kind, SeatKind::Human { user_id: None }),
+                open: game.status != GameStatus::Finished
+                    && (seat.is_open() || seat.invited(viewer)),
                 hints_remaining: seat_hints_remaining(game, seat, index),
                 play_count: seat_play_count(game, index),
             })
@@ -134,6 +136,7 @@ impl GameView {
         let last_play = last_play_positions(game);
 
         Self {
+            can_invite: crate::invitations::can_invite(game, viewer),
             id: game.id,
             status: game.status,
             turn: game.turn,

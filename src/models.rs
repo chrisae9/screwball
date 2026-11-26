@@ -119,7 +119,16 @@ pub enum SeatKind {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SeatInvitation {
+    pub player: Uuid,
+    #[serde(default)]
+    pub declined: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Seat {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub invitation: Option<SeatInvitation>,
     pub id: Uuid,
     pub kind: SeatKind,
     pub name: String,
@@ -128,6 +137,20 @@ pub struct Seat {
 }
 
 impl Seat {
+    pub fn is_open(&self) -> bool {
+        matches!(self.kind, SeatKind::Human { user_id: None }) && self.invitation.is_none()
+    }
+
+    pub fn can_invite(&self) -> bool {
+        self.is_open() || self.invitation.as_ref().is_some_and(|i| i.declined)
+    }
+
+    pub fn invited(&self, player: Uuid) -> bool {
+        self.invitation
+            .as_ref()
+            .is_some_and(|i| i.player == player && !i.declined)
+    }
+
     pub fn is_bot(&self) -> bool {
         matches!(self.kind, SeatKind::Bot { .. })
     }

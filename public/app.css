@@ -1778,3 +1778,27 @@ section.card + section.card {
   font-weight: 600;
   letter-spacing: 0;
 }
+
+.back-link, .invite-game-link {
+  display: inline-flex;
+  align-items: center;
+  gap: .3rem;
+  min-height: 44px;
+  color: var(--ink);
+  font-weight: 650;
+  text-decoration: none;
+}
+.back-link span { font-size: 1.6em; line-height: 1; }
+.invite-game-link { white-space: nowrap; }
+#invitations:empty, [hidden] { display: none !important; }
+#install-guide summary { cursor: pointer; font-weight: 650; }
+#install-guide li + li { margin-top: .45rem; }
+.invite-actions, .player-results { display: flex; flex-wrap: wrap; gap: .5rem; }
+.player-results:not(:empty) { padding: .5rem 0; }
+.player-picker small { display: block; }
+.invite-row + .invite-row { border-top: 1px solid var(--line); margin-top: 1rem; }
+.invitation-alert { position: fixed; z-index: 20; bottom: max(1rem, env(safe-area-inset-bottom)); right: 1rem; }
+@media (max-width: 480px) {
+  .nav:has(.back-link) { padding-block: 0; min-height: 45px; }
+  .game-page .page { height: calc(100dvh - 45px); }
+}

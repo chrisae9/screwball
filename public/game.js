@@ -1749,6 +1749,17 @@ function shortScoreName(seat) {
 function renderHeaderScores(game, pendingScore) {
   const nav = document.querySelector(".nav");
   if (!nav) return;
+  const links = nav.querySelector(".nav-links");
+  const invitation = links.querySelector(".invite-game-link");
+  if (game.can_invite && !invitation) {
+    const link = document.createElement("a");
+    link.href = "/games/" + game.id + "/invite";
+    link.className = "invite-game-link";
+    link.textContent = "Invite player";
+    links.append(link);
+  } else if (!game.can_invite && invitation) {
+    invitation.remove();
+  }
   let strip = nav.querySelector(".header-scores");
   if (!strip) {
     strip = document.createElement("div");

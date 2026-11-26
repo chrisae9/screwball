@@ -541,6 +541,7 @@ fn game_with(seats: Vec<(Vec<Tile>, i32)>) -> Game {
         .into_iter()
         .enumerate()
         .map(|(i, (rack, score))| screwball::models::Seat {
+            invitation: None,
             id: Uuid::new_v4(),
             kind: SeatKind::Human { user_id: None },
             name: format!("Seat {i}"),

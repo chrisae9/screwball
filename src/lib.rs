@@ -7,6 +7,7 @@ pub mod define;
 pub mod dict;
 pub mod error;
 pub mod game;
+pub mod invitations;
 pub mod models;
 pub mod push;
 pub mod render;
