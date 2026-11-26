@@ -1769,6 +1769,7 @@ function recoverChatDraft(game) {
 
 function App({ gameId, initial, autoZoom }) {
   const [game, setGame] = useState(initial);
+  const [otherTurns, setOtherTurns] = useState(0);
   const latestGame = useRef(initial);
 
   function acceptGame(next, observed = latestGame.current) {
@@ -1830,7 +1831,9 @@ function App({ gameId, initial, autoZoom }) {
   useEffect(() => {
     const nav = document.querySelector(".nav-links");
     function update() {
-      setTurnAffordanceSource("other-games", Number(nav.dataset.otherTurns) || 0);
+      const turns = Number(nav.dataset.otherTurns) || 0;
+      setOtherTurns(turns);
+      setTurnAffordanceSource("other-games", turns);
     }
     update();
     nav.addEventListener("otherturns", update);
@@ -2405,25 +2408,22 @@ function App({ gameId, initial, autoZoom }) {
     postMove({ kind: "exchange", tiles });
   }
 
-  async function goToNextGame({ activeOnly = false } = {}) {
-    try {
-      const res = await fetch("/api/my-games");
-      if (!res.ok) {
-        setError("Could not load your games.");
-        return;
-      }
-      const games = await res.json();
-      const others = games.filter((g) => g.id !== gameId);
-      const active = others.filter((g) => g.status !== "finished");
-      const candidates = activeOnly ? active : (active.length ? active : others);
-      if (!candidates.length) {
-        setError(activeOnly ? "No active games to go to." : "No other games to go to.");
-        return;
-      }
-      window.location.href = `/games/${candidates[0].id}`;
-    } catch {
-      setError("Network error — try again.");
+  async function goToNextGame() {
+    if (otherTurns > 0) {
+      try {
+        // A different window may have played that turn since the last update.
+        const response = await fetch("/api/my-games", {cache: "no-store", signal: AbortSignal.timeout(5000)});
+        if (response.ok) {
+          const games = await response.json();
+          const next = games.find(match => match.id !== gameId && match.your_turn);
+          if (next) {
+            window.location.assign(`/games/${next.id}`);
+            return;
+          }
+        }
+      } catch { /* The dashboard can show the current game list on reconnect. */ }
     }
+    window.location.assign("/");
   }
 
   function clearPendingTiles() {
@@ -2472,30 +2472,22 @@ function App({ gameId, initial, autoZoom }) {
     !seated && hasOpenSeat ? html`<${JoinForm} gameId=${gameId} />` : null,
   ]);
   let controlButtons = [];
-  if (finished) {
-    controlButtons = [
-      h("button", {
-        type: "button",
-        class: "button",
-        disabled: busy,
-        onClick: () => goToNextGame({ activeOnly: true }),
-      }, "Next"),
-    ];
-  } else if (!yourTurn) {
-    controlButtons = [
-      h("button", {
+  if (finished || !yourTurn) {
+    controlButtons = [];
+    if (!finished) {
+      controlButtons.push(h("button", {
         type: "button",
         class: "button ghost",
         disabled: busy,
         onClick: shuffleRack,
-      }, "Shuffle"),
-      h("button", {
-        type: "button",
-        class: "button",
-        disabled: busy,
-        onClick: () => goToNextGame(),
-      }, "Next"),
-    ];
+      }, "Shuffle"));
+    }
+    controlButtons.push(h("button", {
+      type: "button",
+      class: "button",
+      disabled: busy,
+      onClick: goToNextGame,
+    }, otherTurns > 0 ? "Next turn" : "Home"));
   } else if (mode === "exchange") {
     controlButtons = [
       h("button", {

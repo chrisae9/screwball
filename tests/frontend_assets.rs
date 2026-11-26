@@ -298,10 +298,8 @@ fn mobile_game_controls_are_compact_and_score_is_separate() {
         "mobile controls should use state-specific compact labels",
     );
     assert!(
-        GAME_JS.contains("function goToNextGame({ activeOnly = false } = {})")
-            && GAME_JS.contains("fetch(\"/api/my-games\")")
-            && GAME_JS.contains("g.status !== \"finished\"")
-            && GAME_JS.contains("window.location.href = `/games/${candidates[0].id}`")
+        GAME_JS.contains("match.id !== gameId && match.your_turn")
+            && GAME_JS.contains("otherTurns > 0 ? \"Next turn\" : \"Home\"")
             && GAME_JS.contains("window.confirm(\"Pass your turn?\")"),
         "controls should support next-game navigation and confirm pass",
     );
@@ -510,9 +508,7 @@ fn pwa_turn_affordance_uses_badging_api() {
     );
     assert!(
         GAME_JS.contains("setTurnAffordanceSource(\"current-game\", yourTurn ? 1 : 0)")
-            && GAME_JS.contains(
-                "setTurnAffordanceSource(\"other-games\", Number(nav.dataset.otherTurns)"
-            ),
+            && GAME_JS.contains("setTurnAffordanceSource(\"other-games\", turns)"),
         "badge count should include the current game and other games where it is your turn",
     );
 }
