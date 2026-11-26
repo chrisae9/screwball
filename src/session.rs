@@ -45,6 +45,9 @@ where
     type Rejection = Infallible;
 
     async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
+        if let Some(user) = parts.extensions.get::<AuthUser>() {
+            return Ok(MaybeUser(Some(user.0)));
+        }
         let jar = SignedCookieJar::<Key>::from_request_parts(parts, state)
             .await
             .expect("SignedCookieJar extraction is infallible");
@@ -60,6 +63,9 @@ where
     type Rejection = AppError;
 
     async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
+        if let Some(user) = parts.extensions.get::<AuthUser>() {
+            return Ok(*user);
+        }
         let jar = SignedCookieJar::<Key>::from_request_parts(parts, state)
             .await
             .expect("SignedCookieJar extraction is infallible");
@@ -83,6 +89,9 @@ where
     type Rejection = Response;
 
     async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
+        if let Some(user) = parts.extensions.get::<AuthUser>() {
+            return Ok(ApiAuthUser(user.0));
+        }
         let jar = SignedCookieJar::<Key>::from_request_parts(parts, state)
             .await
             .expect("SignedCookieJar extraction is infallible");

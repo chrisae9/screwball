@@ -43,7 +43,7 @@ impl FromRef<AppState> for Key {
 }
 
 pub fn router(state: AppState) -> Router {
-    Router::new()
+    let router = Router::new()
         .route("/", get(routes::index))
         .route("/debug/notifications", get(routes::notification_debug_page))
         .route("/debug/touch", get(routes::touch_debug_page))
@@ -77,8 +77,77 @@ pub fn router(state: AppState) -> Router {
         .nest_service("/public", ServeDir::new("public"))
         .layer(from_fn(cache_control))
         .layer(from_fn_with_state(state.clone(), log_request))
-        .layer(TraceLayer::new_for_http())
-        .with_state(state)
+        .layer(TraceLayer::new_for_http());
+    let router = if env_flag("SCREWBALL_AUTHENTIK") {
+        router.layer(from_fn_with_state(state.clone(), authentik_player))
+    } else {
+        router
+    };
+    router.with_state(state)
+}
+
+// Enabled only behind the header-clearing Authentik gateway and its ingress policy.
+async fn authentik_player(State(state): State<AppState>, mut req: Request, next: Next) -> Response {
+    use crate::users::{User, UserSettings};
+    use axum::http::{Method, StatusCode};
+    use axum::response::{IntoResponse, Redirect};
+
+    let path = req.uri().path();
+    if path == "/healthcheck" {
+        return next.run(req).await;
+    }
+    let header = |name: &str| req.headers().get(name).and_then(|h| h.to_str().ok());
+    let Some(uid) = header("x-authentik-uid").filter(|s| {
+        s.len() >= 16 && s.len() <= 128 && s.bytes().all(|b| b.is_ascii_hexdigit() || b == b'-')
+    }) else {
+        return StatusCode::UNAUTHORIZED.into_response();
+    };
+    if !matches!(*req.method(), Method::GET | Method::HEAD | Method::OPTIONS)
+        && (header("sec-fetch-site") == Some("cross-site")
+            || header("origin")
+                .is_some_and(|origin| Some(origin) != env::var("RP_ORIGIN").ok().as_deref()))
+    {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    if path == "/auth/logout" {
+        return Redirect::to("/outpost.goauthentik.io/sign_out").into_response();
+    }
+    if path.starts_with("/auth/") {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    let username = format!("ak-{uid}");
+    let display_name: String = header("x-authentik-name")
+        .unwrap_or("Player")
+        .split('@')
+        .next()
+        .unwrap_or("Player")
+        .chars()
+        .take(48)
+        .collect();
+    let player = if let Some(user) = state.users.get_by_username(&username).await {
+        user.id
+    } else {
+        let id = uuid::Uuid::new_v4();
+        let user = User {
+            id,
+            username: username.clone(),
+            display_name,
+            credentials: vec![],
+            push_subscriptions: vec![],
+            settings: UserSettings { auto_zoom: true },
+            created_at: chrono::Utc::now(),
+        };
+        match state.users.insert(user).await {
+            Ok(()) => id,
+            Err(err) => match state.users.get_by_username(&username).await {
+                Some(user) => user.id,
+                None => return err.into_response(),
+            },
+        }
+    };
+    req.extensions_mut()
+        .insert(crate::session::AuthUser(player));
+    next.run(req).await
 }
 
 /// Log every request's method, path, status, signed-in username, and wall-clock
