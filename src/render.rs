@@ -111,6 +111,7 @@ fn layout_with_back(
   {head_extra}
 </head>
 <body class="{body_class}">
+  <div class="status-bar-edge" aria-hidden="true"></div>
   <nav class="nav">
   {back}
   <div class="nav-links">{nav_actions}</div>

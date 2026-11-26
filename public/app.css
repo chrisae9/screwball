@@ -53,15 +53,33 @@ body {
   width: auto;
   height: auto;
   min-height: 44px;
-  color: var(--ink);
-  font: bold 1.65rem/1.1 Georgia, serif;
-  letter-spacing: -.045em;
+  color: var(--accent);
+  font: italic 700 clamp(1.9rem, 1.8rem + .5vw, 2.15rem)/1 Georgia, "Times New Roman", serif;
+  letter-spacing: -.055em;
+  padding-inline-end: .12em;
   text-decoration: none;
 }
 
 /* Previously opened dashboards receive this sheet through their live feed. */
 .nav .brand:has(> .brand-icon)::before { content: "Scrabble"; }
 .nav .brand > .brand-icon { display: none; }
+
+.status-bar-edge { display: none; }
+
+/* WebKit needs a real fixed element to suppress the Home Screen scroll-edge blur. */
+@supports (-webkit-touch-callout: none) {
+  @media (display-mode: standalone) {
+    .status-bar-edge {
+      display: block;
+      position: fixed;
+      inset: 0 0 auto;
+      height: 1px;
+      z-index: 11;
+      background: var(--surface);
+      pointer-events: none;
+    }
+  }
+}
 
 .nav-links {
   display: flex;
@@ -1568,7 +1586,31 @@ section.card + section.card {
   }
   .game-page .nav { column-gap: .35rem; padding-inline: .5rem; }
   .game-page .nav-links { gap: .3rem; }
-  .game-page .header-score { flex: none; max-width: 36vw; }
+  /* Keep both names and scores visible between Back and the game actions. */
+  .game-page .header-scores {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    justify-items: start;
+    gap: 1px;
+    font-size: .8125rem;
+  }
+  .game-page .header-score { max-width: 100%; padding: 1px .3rem; }
+  .game-page .header-score-value { color: var(--ink); }
+  .game-page .turn-dot { flex: none; }
+
+  /* Crowded games get a second row instead of hiding players behind the actions. */
+  .game-page .nav:has(.header-score:nth-child(3), .nav-links > :nth-child(3 of a, button)) {
+    grid-template-columns: auto minmax(0, 1fr);
+    row-gap: 0;
+  }
+  .game-page .nav:has(.header-score:nth-child(3), .nav-links > :nth-child(3 of a, button)) .nav-links {
+    grid-area: 1 / 2;
+  }
+  .game-page .nav:has(.header-score:nth-child(3), .nav-links > :nth-child(3 of a, button)) .header-scores {
+    grid-area: 2 / 1 / auto / -1;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding: 0 0 .3rem;
+  }
 
 }
 .bag-low {
