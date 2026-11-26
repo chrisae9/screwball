@@ -127,14 +127,48 @@ pub fn error_page(title: &str, message: &str) -> String {
     )
 }
 
-pub fn home_page(
-    games: &[Game],
-    joinable_games: &[Game],
-    current: Option<Uuid>,
-    display_name: Option<&str>,
-    invitations: &str,
-) -> String {
-    let Some(current) = current else {
+#[derive(serde::Serialize)]
+pub struct HomeActivity {
+    pub invitations: String,
+    pub open_games: String,
+    pub games: String,
+}
+
+pub fn home_activity(
+    games: &[&Game],
+    joinable_games: &[&Game],
+    current: Uuid,
+    invitations: String,
+) -> HomeActivity {
+    let list = if games.is_empty() {
+        "<p class=\"muted\">No games yet. Create one to get started.</p>".to_string()
+    } else {
+        game_list(games, current)
+    };
+    let open_games = if joinable_games.is_empty() {
+        String::new()
+    } else {
+        format!(
+            r#"<h1>Open games</h1>
+  <p class="muted">Games with open seats waiting for another player.</p>
+  {}"#,
+            open_game_list(joinable_games),
+        )
+    };
+    HomeActivity {
+        games: list,
+        open_games,
+        invitations,
+    }
+}
+
+pub fn home_page(activity: Option<HomeActivity>, display_name: Option<&str>) -> String {
+    let Some(HomeActivity {
+        invitations,
+        open_games,
+        games: list,
+    }) = activity
+    else {
         return layout_with_head(
             "Scrabble",
             &signed_out_panel(),
@@ -146,27 +180,10 @@ pub fn home_page(
             "",
         );
     };
-    let list = if games.is_empty() {
-        "<p class=\"muted\">No games yet. Create one to get started.</p>".to_string()
-    } else {
-        game_list(games, current)
-    };
-    let open_games = if joinable_games.is_empty() {
-        String::new()
-    } else {
-        format!(
-            r#"<section class="card">
-  <h1>Open games</h1>
-  <p class="muted">Games with open seats waiting for another player.</p>
-  {}
-</section>"#,
-            open_game_list(joinable_games),
-        )
-    };
     let greeting = display_name
         .map(|name| format!("Signed in as <strong>{}</strong>", escape(name)))
         .unwrap_or_else(|| "Signed in".to_string());
-    layout(
+    layout_with_head(
         "Scrabble",
         &format!(
             r#"<section class="card account">
@@ -179,13 +196,23 @@ pub fn home_page(
 </section>
 <section class="card" id="invitations" aria-live="polite">{invitations}</section>
 <details id="install-guide" class="card" hidden><summary>Install Scrabble on your phone</summary><ol></ol></details>
-{open_games}
+<aside class="card notification-controls" id="phone-alerts" hidden>
+  <strong>Phone alerts</strong><p class="muted" id="notif-status" role="status"></p>
+  <button type="button" id="notif-enable" class="button" hidden>Enable notifications</button>
+</aside>
+<section class="card" id="open-games">{open_games}</section>
 <section class="card">
   <h1>Your games</h1>
-  {list}
+  <div id="my-games">{list}</div>
   <p class="debug-link"><a href="/debug/notifications">Notification debug</a> | <a href="/debug/touch">Touch debug</a></p>
 </section>"#
         ),
+        &format!(
+            r#"<script type="module" src="{}"></script>"#,
+            asset("/public/settings.js")
+        ),
+        "",
+        "",
     )
 }
 
@@ -507,9 +534,10 @@ fn new_game_form() -> String {
     )
 }
 
-fn game_list(games: &[Game], current: Uuid) -> String {
+fn game_list(games: &[&Game], current: Uuid) -> String {
     let mut active_games: Vec<&Game> = games
         .iter()
+        .copied()
         .filter(|game| game.status != GameStatus::Finished)
         .collect();
     active_games.sort_by(|a, b| {
@@ -525,6 +553,7 @@ fn game_list(games: &[Game], current: Uuid) -> String {
 
     let mut finished_games: Vec<&Game> = games
         .iter()
+        .copied()
         .filter(|game| game.status == GameStatus::Finished)
         .collect();
     finished_games.sort_by_key(|game| std::cmp::Reverse(effective_updated_at(game)));
@@ -575,8 +604,8 @@ fn game_list_item(game: &Game, current: Uuid) -> String {
     )
 }
 
-fn open_game_list(games: &[Game]) -> String {
-    let rows: String = games.iter().map(open_game_list_item).collect();
+fn open_game_list(games: &[&Game]) -> String {
+    let rows: String = games.iter().copied().map(open_game_list_item).collect();
     format!("<ul class=\"game-list open-game-list\">{rows}</ul>")
 }
 

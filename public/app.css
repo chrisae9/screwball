@@ -1802,3 +1802,5 @@ section.card + section.card {
   .nav:has(.back-link) { padding-block: 0; min-height: 45px; }
   .game-page .page { height: calc(100dvh - 45px); }
 }
+#open-games:empty { display: none; }
+.activity-reconnect { display: block; text-align: center; padding: .4rem; background: var(--surface); color: var(--ink); }

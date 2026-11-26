@@ -152,14 +152,31 @@ impl PushService {
         };
 
         let topic = game_id.simple().to_string();
+        if user.push_subscriptions.is_empty() {
+            tracing::info!(%game_id, %user_id, "no registered device for game notification");
+        }
         for subscription in user.push_subscriptions {
-            if let Err(err) = send_one(inner, &subscription, &topic, &payload).await {
-                tracing::warn!(
-                    error = %err,
-                    %game_id,
-                    user_id = %user_id,
-                    "web push send failed"
-                );
+            match send_one(inner, &subscription, &topic, &payload).await {
+                Ok(()) => {
+                    tracing::info!(%game_id, %user_id, "push provider accepted game notification")
+                }
+                Err(
+                    web_push::WebPushError::EndpointNotFound(_)
+                    | web_push::WebPushError::EndpointNotValid(_),
+                ) => {
+                    if let Err(err) = users
+                        .update(user_id, |user| {
+                            user.push_subscriptions.retain(|sub| sub != &subscription)
+                        })
+                        .await
+                    {
+                        tracing::warn!(%err, %user_id, "could not remove expired push subscription");
+                    }
+                    tracing::info!(%game_id, %user_id, "push subscription expired");
+                }
+                Err(err) => {
+                    tracing::warn!(error = %err, %game_id, %user_id, "web push send failed")
+                }
             }
         }
     }

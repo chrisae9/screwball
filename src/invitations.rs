@@ -146,10 +146,9 @@ pub async fn decline(
     Ok(Redirect::to("/"))
 }
 
-pub fn inbox_html(games: &[Game], user: Uuid) -> String {
+pub fn inbox_html<'a>(games: impl Iterator<Item = &'a Game>, user: Uuid) -> String {
     let mut html = String::new();
     for game in games
-        .iter()
         .filter(|g| g.status != GameStatus::Finished && g.seats.iter().any(|s| s.invited(user)))
     {
         let id = game.id;
@@ -166,5 +165,8 @@ pub fn inbox_html(games: &[Game], user: Uuid) -> String {
 }
 
 pub async fn inbox(State(state): State<AppState>, ApiAuthUser(user): ApiAuthUser) -> Html<String> {
-    Html(inbox_html(&state.store.list().await, user))
+    Html(inbox_html(
+        state.store.snapshots().iter().map(AsRef::as_ref),
+        user,
+    ))
 }

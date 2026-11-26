@@ -1615,7 +1615,8 @@ async function ensurePushNotifications({ prompt = false } = {}) {
     const { public_key: publicKey } = await keyRes.json();
     if (!publicKey) return "unsupported";
 
-    const registration = await navigator.serviceWorker.register("/sw.js");
+    await navigator.serviceWorker.register("/sw.js");
+    const registration = await navigator.serviceWorker.ready;
     let subscription = await registration.pushManager.getSubscription();
     if (!subscription) {
       subscription = await registration.pushManager.subscribe({
@@ -1642,16 +1643,14 @@ async function ensurePushNotifications({ prompt = false } = {}) {
 function notifyTurn(body, url) {
   if (!("Notification" in window) || Notification.permission !== "granted") return;
   if (document.visibilityState === "visible") return;
-  const n = new Notification("Your turn!", {
+  // Mobile browsers require persistent notifications through the registered worker.
+  navigator.serviceWorker?.getRegistration().then(registration => registration?.showNotification("Your turn!", {
     body: body || "It's your turn in Scrabble",
     icon: "/public/apple-touch-icon.png",
-    tag: url || "screwball-turn",
-  });
-  n.addEventListener("click", () => {
-    if (url) window.location.href = url;
-    window.focus();
-    n.close();
-  });
+    tag: "turn-" + url.split("/").pop(),
+    data: {url},
+  })).catch(() => {});
+
 }
 
 const baseFavicon = document.querySelector('link[rel="icon"]').href;
@@ -1928,27 +1927,45 @@ function App({ gameId, initial, autoZoom }) {
       }
       setGame(next);
     };
+    let revision = 0;
+    let stateRequest;
     const es = new EventSource(`/games/${gameId}/events`);
     es.addEventListener("message", (e) => {
       try {
+        revision++;
         applyState(JSON.parse(e.data));
       } catch {
         /* ignore malformed event */
       }
     });
     async function refetchIfVisible() {
-      if (document.visibilityState !== "visible") return;
+      if (document.hidden || stateRequest) return;
+      const atStart = revision;
+      const controller = new AbortController();
+      stateRequest = controller;
+      const timer = setTimeout(() => controller.abort(), 8000);
       try {
-        const res = await fetch(`/games/${gameId}/state`);
-        if (res.ok) applyState(await res.json());
-      } catch {
-        /* transient network error */
-      }
+        const res = await fetch(`/games/${gameId}/state`, {cache:"no-store", signal:controller.signal});
+        if (res.ok) {
+          const next = await res.json();
+          if (atStart === revision && !controller.signal.aborted) applyState(next);
+        }
+      } catch { /* The next foreground check retries. */ }
+      finally { clearTimeout(timer); stateRequest = null; }
     }
+    const timer = setInterval(refetchIfVisible, 15000);
     document.addEventListener("visibilitychange", refetchIfVisible);
+    window.addEventListener("online", refetchIfVisible);
+    window.addEventListener("pageshow", refetchIfVisible);
+    window.addEventListener("focus", refetchIfVisible);
     return () => {
+      clearInterval(timer);
+      stateRequest?.abort();
       es.close();
       document.removeEventListener("visibilitychange", refetchIfVisible);
+      window.removeEventListener("online", refetchIfVisible);
+      window.removeEventListener("pageshow", refetchIfVisible);
+      window.removeEventListener("focus", refetchIfVisible);
     };
   }, [gameId]);
 

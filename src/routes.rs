@@ -37,29 +37,69 @@ fn viewer_id(user: Option<Uuid>) -> Uuid {
 
 pub async fn index(State(state): State<AppState>, MaybeUser(user): MaybeUser) -> Html<String> {
     let Some(user) = user else {
-        return Html(render::home_page(&[], &[], None, None, ""));
+        return Html(render::home_page(None, None));
     };
-    let games = state.store.list().await;
-    let mine: Vec<Game> = games
+    let name = state.users.get(user).await.map(|u| u.display_name);
+    Html(render::home_page(
+        Some(dashboard(&state, user).await),
+        name.as_deref(),
+    ))
+}
+
+pub async fn activity(
+    State(state): State<AppState>,
+    ApiAuthUser(user): ApiAuthUser,
+) -> Json<render::HomeActivity> {
+    Json(dashboard(&state, user).await)
+}
+
+async fn dashboard(state: &AppState, user: Uuid) -> render::HomeActivity {
+    let games = state.store.snapshots();
+    let mine: Vec<&Game> = games
         .iter()
         .filter(|game| is_user_seated(game, user))
-        .cloned()
+        .map(AsRef::as_ref)
         .collect();
-    let joinable: Vec<Game> = games
+    let joinable: Vec<&Game> = games
         .iter()
         .filter(|game| game.status != GameStatus::Finished)
         .filter(|game| !is_user_seated(game, user))
         .filter(|game| has_open_seat(game) && !game.seats.iter().any(|s| s.invited(user)))
-        .cloned()
+        .map(AsRef::as_ref)
         .collect();
-    let display_name = state.users.get(user).await.map(|u| u.display_name);
-    Html(render::home_page(
+    render::home_activity(
         &mine,
         &joinable,
-        Some(user),
-        display_name.as_deref(),
-        &crate::invitations::inbox_html(&games, user),
-    ))
+        user,
+        crate::invitations::inbox_html(games.iter().map(AsRef::as_ref), user),
+    )
+}
+
+/// Signal a refresh only for activity involving this viewer. Clients fetch current state on
+/// connection and periodically reconcile public seats as well as any missed updates.
+pub async fn activity_events(
+    State(state): State<AppState>,
+    ApiAuthUser(user): ApiAuthUser,
+) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
+    let rx = state.store.subscribe();
+    let stream = unfold((rx, state.store), move |(mut rx, store)| async move {
+        loop {
+            let changed = match rx.recv().await {
+                Ok(id) => store.get(id).await.is_some_and(|g| {
+                    is_user_seated(&g, user)
+                        || g.seats
+                            .iter()
+                            .any(|s| s.invitation.as_ref().is_some_and(|i| i.player == user))
+                }),
+                Err(RecvError::Lagged(_)) => true,
+                Err(RecvError::Closed) => return None,
+            };
+            if changed {
+                return Some((Ok(Event::default().data("refresh")), (rx, store)));
+            }
+        }
+    });
+    Sse::new(stream).keep_alive(KeepAlive::default())
 }
 
 pub(crate) fn is_user_seated(game: &Game, user: Uuid) -> bool {
@@ -299,8 +339,7 @@ async fn my_game_summaries(
 ) -> Vec<GameSummary> {
     let mut summaries: Vec<GameSummary> = state
         .store
-        .list()
-        .await
+        .snapshots()
         .iter()
         .filter(|game| Some(game.id) != exclude)
         .filter_map(|game| GameSummary::for_viewer(game, user))
@@ -518,12 +557,12 @@ pub async fn game_events(
     Path(id): Path<Uuid>,
 ) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, AppError> {
     let viewer = viewer_id(user);
+    let rx = state.store.subscribe();
     let initial = state
         .store
         .get(id)
         .await
         .ok_or_else(|| AppError::not_found("game not found"))?;
-    let rx = state.store.subscribe();
     let store = state.store.clone();
 
     // State carried through the stream: Some(view) to emit first, then wait for

@@ -17,7 +17,12 @@ self.addEventListener("push", (event) => {
     data: { url: payload.url || "/" },
   };
 
-  event.waitUntil(self.registration.showNotification(title, options));
+  event.waitUntil(Promise.all([
+    self.registration.showNotification(title, options),
+    self.clients.matchAll({type: "window", includeUncontrolled: true}).then(clients => {
+      for (const client of clients) client.postMessage({type: "scrabble-activity"}, []);
+    }),
+  ]));
 });
 
 self.addEventListener("notificationclick", (event) => {
@@ -33,6 +38,7 @@ self.addEventListener("notificationclick", (event) => {
       .then((clients) => {
         for (const client of clients) {
           if (client.url === url && "focus" in client) {
+            client.postMessage({type: "scrabble-activity"}, []);
             return client.focus();
           }
         }

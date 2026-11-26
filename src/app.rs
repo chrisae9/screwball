@@ -61,6 +61,8 @@ pub fn router(state: AppState) -> Router {
         .route("/games", post(routes::create_game))
         .route("/games/new", get(routes::new_game_page))
         .route("/api/players", get(crate::invitations::search))
+        .route("/api/activity", get(routes::activity))
+        .route("/api/activity/events", get(routes::activity_events))
         .route("/api/invitations", get(crate::invitations::inbox))
         .route(
             "/games/{id}/invite",
@@ -194,8 +196,12 @@ async fn log_request(State(state): State<AppState>, request: Request, next: Next
 async fn cache_control(request: Request, next: Next) -> Response {
     let path = request.uri().path();
     let is_asset = path.starts_with("/public/") && !INSTALL_ASSETS.contains(&path);
+    let private =
+        path.starts_with("/api/") || path.ends_with("/events") || path.ends_with("/state");
     let mut response = next.run(request).await;
-    let value = if is_asset && !cfg!(debug_assertions) {
+    let value = if private {
+        "private, no-store"
+    } else if is_asset && !cfg!(debug_assertions) {
         "public, max-age=31536000, immutable"
     } else {
         "no-cache"
@@ -306,6 +312,7 @@ fn asset_version() -> String {
         "public/app.css",
         "public/game.js",
         "public/players.js",
+        "public/settings.js",
         "public/auth.js",
         "public/touch-debug.js",
         "public/sw.js",

@@ -97,9 +97,17 @@ impl GameStore {
 
     /// Games sorted newest-first, for listing.
     pub async fn list(&self) -> Vec<Game> {
-        let mut games: Vec<Game> = {
+        self.snapshots()
+            .iter()
+            .map(|game| game.as_ref().clone())
+            .collect()
+    }
+
+    /// Immutable shared views for frequent dashboard checks, without copying boards or racks.
+    pub fn snapshots(&self) -> Vec<Arc<Game>> {
+        let mut games: Vec<Arc<Game>> = {
             let map = self.games.lock().unwrap();
-            map.values().map(|entry| (*entry.game).clone()).collect()
+            map.values().map(|entry| entry.game.clone()).collect()
         };
         games.sort_by_key(|game| std::cmp::Reverse(game.created_at));
         games

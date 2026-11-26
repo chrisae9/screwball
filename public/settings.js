@@ -38,14 +38,6 @@ async function jsonFetch(url, options = {}) {
   return body;
 }
 
-async function registrationAndSubscription() {
-  const registration = await navigator.serviceWorker.getRegistration("/sw.js");
-  const subscription = registration
-    ? await registration.pushManager.getSubscription()
-    : null;
-  return { registration, subscription };
-}
-
 async function enableNotifications() {
   const support = browserSupport();
   if (!support.notifications || !support.serviceWorker || !support.pushManager) {
@@ -64,7 +56,8 @@ async function enableNotifications() {
     throw new Error("server does not have a VAPID public key");
   }
 
-  const registration = await navigator.serviceWorker.register("/sw.js");
+  await navigator.serviceWorker.register("/sw.js");
+  const registration = await navigator.serviceWorker.ready;
   let subscription = await registration.pushManager.getSubscription();
   if (!subscription) {
     subscription = await registration.pushManager.subscribe({
@@ -79,63 +72,56 @@ async function enableNotifications() {
   });
 }
 
-async function refreshStatus() {
+const homePanel = document.getElementById("phone-alerts");
+let updating = false;
+
+async function refreshStatus(prompt = false) {
+  if (updating || !statusEl || !buttonEl || document.hidden) return;
+  const ios = /iPad|iPhone|iPod/.test(navigator.userAgent)
+    || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  if (homePanel) homePanel.hidden = false;
+  if (ios && !(navigator.standalone || matchMedia("(display-mode: standalone)").matches)) {
+    setStatus("For iPhone or iPad alerts, add Scrabble to your Home Screen, then open it there and enable notifications.");
+    buttonEl.hidden = true;
+    return;
+  }
   const support = browserSupport();
   if (!support.notifications || !support.serviceWorker || !support.pushManager) {
     setStatus("Notifications aren't supported in this browser.");
-    if (buttonEl) buttonEl.hidden = true;
+    buttonEl.hidden = true;
+    if (homePanel) homePanel.hidden = true;
     return;
   }
-
-  const permission = Notification.permission;
-  if (permission === "denied") {
+  if (Notification.permission === "denied") {
     setStatus("Notifications are blocked in your browser settings.");
-    if (buttonEl) buttonEl.hidden = true;
+    buttonEl.hidden = true;
     return;
   }
-
-  try {
-    const { subscription } = await registrationAndSubscription();
-    if (permission === "granted" && subscription) {
-      setStatus("Notifications are on.");
-      if (buttonEl) buttonEl.hidden = true;
-      return;
-    }
-    if (permission === "granted" && !subscription) {
-      if (buttonEl) buttonEl.hidden = true;
-      await enableNotifications();
-      setStatus("Notifications are on.");
-      return;
-    }
-  } catch {
-    setStatus("Couldn't enable notifications.");
-    if (buttonEl) buttonEl.hidden = true;
-    return;
-  }
-
-  setStatus("Notifications are off.");
-  if (buttonEl) {
+  buttonEl.textContent = "Enable notifications";
+  if (!prompt && Notification.permission !== "granted") {
+    setStatus(homePanel ? "Get an alert when someone invites you or it’s your turn." : "Notifications are off.");
     buttonEl.hidden = false;
-    buttonEl.textContent = "Enable notifications";
+    return;
+  }
+  updating = true;
+  buttonEl.disabled = true;
+  try {
+    // Re-save the current device even when its browser already has a subscription.
+    await enableNotifications();
+    setStatus("Notifications are on.");
+    buttonEl.hidden = true;
+    if (homePanel) homePanel.hidden = true;
+  } catch {
+    const denied = Notification.permission === "denied";
+    setStatus(denied ? "Notifications are blocked in your browser settings." : "Phone alerts aren't connected yet. Tap to retry.");
+    buttonEl.hidden = denied;
+  } finally {
+    buttonEl.disabled = false;
+    updating = false;
   }
 }
-
-if (buttonEl) {
-  buttonEl.addEventListener("click", async () => {
-    buttonEl.disabled = true;
-    setStatus("Enabling notifications…");
-    try {
-      await enableNotifications();
-      await refreshStatus();
-    } catch {
-      setStatus("Couldn't enable notifications.");
-    } finally {
-      buttonEl.disabled = false;
-    }
-  });
-}
-
-refreshStatus().catch(() => {
-  setStatus("Couldn't enable notifications.");
-  if (buttonEl) buttonEl.hidden = true;
-});
+buttonEl?.addEventListener("click", () => refreshStatus(true));
+document.addEventListener("visibilitychange", () => refreshStatus());
+window.addEventListener("online", () => refreshStatus());
+window.addEventListener("pageshow", event => { if (event.persisted) refreshStatus(); });
+refreshStatus();

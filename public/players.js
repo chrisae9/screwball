@@ -105,31 +105,93 @@ if (inviteForm) {
 setupInstallGuide(document.querySelector("#install-guide"));
 
 const inbox = document.querySelector("#invitations");
-const onGame = document.querySelector("#game-island");
-if (inbox || onGame || inviteForm || document.querySelector(".new-game-form")) {
-  let last = inbox?.innerHTML;
-  let busy = false;
+if (inbox || document.querySelector(".back-link")) {
   const alertLink = document.createElement("a");
   alertLink.className = "invitation-alert button";
   alertLink.href = "/#invitations";
   alertLink.textContent = "View game invitations";
-  async function refresh() {
-    if (document.hidden || busy) return;
-    busy = true;
-    try {
-      const response = await fetch("/api/invitations", {cache: "no-store"});
-      if (!response.ok || response.redirected) return;
-      const html = await response.text();
-      if (html === last) return;
-      last = html;
-      if (inbox) inbox.innerHTML = html;
-      else if (html) document.body.append(alertLink);
-      else alertLink.remove();
-    } catch { /* Keep the last received invitations while offline. */ }
-    finally { busy = false; }
+  const previous = new Map();
+  let stream;
+  let request;
+  let queued = false;
+  let stopped = false;
+  let failures = 0;
+  const connection = document.createElement("a");
+  connection.className = "activity-reconnect";
+  connection.href = location.href;
+  connection.textContent = "Updates paused · Reconnect";
+  function reportFailure() {
+    if (++failures >= 2 && !connection.isConnected) document.querySelector(".nav").after(connection);
   }
-  if (!inbox) refresh();
-  setInterval(refresh, 15000);
-  document.addEventListener("visibilitychange", refresh);
-  window.addEventListener("pageshow", refresh);
+  function replace(id, html) {
+    if (previous.get(id) === html) return;
+    previous.set(id, html);
+    const element = document.getElementById(id);
+    const finishedExpanded = element.querySelector("details[open]") != null;
+    element.innerHTML = html;
+    const details = element.querySelector("details");
+    if (finishedExpanded && details) details.open = true;
+  }
+  async function refresh() {
+    if (document.hidden || stopped) return;
+    if (request) { queued = true; return; }
+    const controller = new AbortController();
+    request = controller;
+    const timeout = setTimeout(() => controller.abort(), 8000);
+    try {
+      const response = await fetch(inbox ? "/api/activity" : "/api/invitations", {
+        cache: "no-store", signal: controller.signal,
+      });
+      if (response.status === 401) {
+        failures = 2;
+        reportFailure();
+        stopped = true;
+        stream?.close();
+        return;
+      }
+      if (!response.ok || response.redirected) { reportFailure(); return; }
+      if (inbox) {
+        const activity = await response.json();
+        replace("invitations", activity.invitations);
+        replace("my-games", activity.games);
+        replace("open-games", activity.open_games);
+      } else {
+        const html = await response.text();
+        if (html && !alertLink.isConnected) document.body.append(alertLink);
+        else if (!html) alertLink.remove();
+      }
+      failures = 0;
+      connection.remove();
+    } catch { if (!document.hidden) reportFailure(); }
+    finally {
+      clearTimeout(timeout);
+      request = null;
+      if (queued) { queued = false; void refresh(); }
+    }
+  }
+  function pause() {
+    stream?.close();
+    stream = null;
+    request?.abort();
+  }
+  function resume() {
+    if (document.hidden || stopped) return;
+    if (!stream && "EventSource" in window) {
+      stream = new EventSource("/api/activity/events");
+      stream.addEventListener("open", refresh);
+      stream.addEventListener("message", refresh);
+    }
+    void refresh();
+  }
+  // Phone browsers suspend connections and timers. Always read current state on return.
+  document.addEventListener("visibilitychange", () => document.hidden ? pause() : resume());
+  window.addEventListener("pagehide", pause);
+  window.addEventListener("pageshow", resume);
+  window.addEventListener("focus", resume);
+  window.addEventListener("online", resume);
+  navigator.serviceWorker?.addEventListener("message", event => {
+    if (event.data?.type === "scrabble-activity") void refresh();
+  });
+  setInterval(refresh, 5000);
+  resume();
 }
