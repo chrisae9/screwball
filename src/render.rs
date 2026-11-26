@@ -166,10 +166,21 @@ pub fn error_page(title: &str, message: &str) -> String {
 
 #[derive(serde::Serialize)]
 pub struct HomeActivity {
+    pub version: &'static str,
     pub away: bool,
     pub invitations: String,
     pub open_games: String,
     pub games: String,
+}
+
+impl HomeActivity {
+    /// Older open dashboards only replace the contents of #my-games. Deliver
+    /// the stylesheet with that fragment so they can render the current cards.
+    pub fn include_dashboard_styles(&mut self) {
+        let css = asset("/public/app.css");
+        self.games
+            .insert_str(0, &format!(r#"<link rel="stylesheet" href="{css}">"#));
+    }
 }
 
 pub fn home_activity(
@@ -194,6 +205,7 @@ pub fn home_activity(
         )
     };
     HomeActivity {
+        version: asset_version(),
         away,
         games: list,
         open_games,
@@ -203,6 +215,7 @@ pub fn home_activity(
 
 pub fn home_page(activity: Option<HomeActivity>, profile: Option<&crate::users::User>) -> String {
     let Some(HomeActivity {
+        version,
         away,
         invitations,
         open_games,
@@ -249,7 +262,7 @@ pub fn home_page(activity: Option<HomeActivity>, profile: Option<&crate::users::
 </aside>
 <section class="card match-section">
   <h1>Your games</h1>
-  <div id="my-games">{list}</div>
+  <div id="my-games" data-dashboard-version="{version}">{list}</div>
 </section>
 <section class="card match-section" id="open-games">{open_games}</section>"#
         ),
@@ -709,13 +722,13 @@ fn game_list_item(game: &Game, current: Uuid) -> String {
             )
         };
         seats.push_str(&format!(
-            r#"<span class="match-player"><span>{name}</span>{score}</span>"#
+            r#"<div class="match-player"><span>{name}</span> {score}</div>"#
         ));
     }
     format!(
         r#"<li class="game-list-item"><a class="match-card" href="/games/{id}">
-  <span class="match-meta"><span class="match-status{turn_class}">{state}</span><time class="game-list-time" datetime="{updated}">{time}</time></span>
-  <span class="match-lineup">{seats}</span>
+  <div class="match-meta"><span class="match-status{turn_class}">{state}</span> <time class="game-list-time" datetime="{updated}">{time}</time></div>
+  <div class="match-lineup">{seats}</div>
 </a></li>"#,
         id = game.id,
         updated = effective_updated_at(game).to_rfc3339(),
@@ -745,7 +758,7 @@ fn open_game_list_item(game: &Game) -> String {
         "open seats"
     };
     format!(
-        r#"<li class="open-match"><a class="open-match-info" href="/games/{id}"><strong>{players}</strong><span>{count} {label}</span></a>
+        r#"<li class="open-match"><a class="open-match-info" href="/games/{id}"><strong>{players}</strong> <span>{count} {label}</span></a>
   <form class="inline-join-form" method="post" action="/games/{id}/join">
     <button type="submit" class="button button-secondary">Join</button>
   </form></li>"#,

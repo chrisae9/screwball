@@ -316,6 +316,7 @@ pub fn build_webauthn() -> Result<Webauthn> {
 fn asset_version() -> String {
     use std::hash::{Hash, Hasher};
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    include_bytes!("render.rs").hash(&mut hasher);
     for file in [
         "public/manifest.webmanifest",
         "public/apple-touch-icon.png",

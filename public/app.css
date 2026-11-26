@@ -666,7 +666,13 @@ body {
   font: inherit;
 }
 
-.match-section h1 { margin: 0 0 .85rem; font-size: 1.4rem; }
+/* An installed dashboard can keep the previous page and its original CSS
+   open across a release. Its live games fragment loads this sheet as well. */
+body:not(.dashboard-page) #my-games + .debug-link { display: none; }
+body:not(.dashboard-page) #my-games .game-list-item { display: block; padding: 0; background: transparent; }
+body:not(.dashboard-page) #my-games .match-card,
+body:not(.dashboard-page) #open-games .open-match-info { color: var(--ink); }
+section.card:has(> #my-games) > h1, #open-games > h1, .match-section h1 { margin: 0 0 .85rem; font-size: 1.4rem; }
 .game-list { display: grid; gap: .65rem; list-style: none; padding: 0; margin: 0; }
 .match-card, .open-match {
   display: grid; gap: .65rem; border: 1px solid var(--line); border-radius: .65rem;

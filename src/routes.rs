@@ -49,8 +49,13 @@ pub async fn index(State(state): State<AppState>, MaybeUser(user): MaybeUser) ->
 pub async fn activity(
     State(state): State<AppState>,
     ApiAuthUser(user): ApiAuthUser,
+    headers: axum::http::HeaderMap,
 ) -> Json<render::HomeActivity> {
-    Json(dashboard(&state, user).await)
+    let mut activity = dashboard(&state, user).await;
+    if !headers.contains_key("x-scrabble-dashboard") {
+        activity.include_dashboard_styles();
+    }
+    Json(activity)
 }
 
 async fn dashboard(state: &AppState, user: Uuid) -> render::HomeActivity {

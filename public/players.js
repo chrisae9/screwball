@@ -168,6 +168,7 @@ if (inviteForm) {
 setupInstallGuide(document.querySelector("#install-guide"));
 
 const inbox = document.querySelector("#invitations");
+const dashboardVersion = document.getElementById("my-games")?.dataset.dashboardVersion;
 if (inbox || document.querySelector(".back-link")) {
   const alertLink = document.createElement("a");
   const nav = document.querySelector(".nav-links");
@@ -221,7 +222,7 @@ if (inbox || document.querySelector(".back-link")) {
     try {
       const response = await fetch(inbox ? "/api/activity" : "/api/invitations", {
         cache: "no-store", signal: controller.signal,
-        headers: board ? {"x-scrabble-current-game": board} : {},
+        headers: dashboardVersion ? {"x-scrabble-dashboard": dashboardVersion} : board ? {"x-scrabble-current-game": board} : {},
       });
       if (response.status === 401) {
         failures = 2;
@@ -233,6 +234,12 @@ if (inbox || document.querySelector(".back-link")) {
       if (!response.ok || response.redirected) { reportFailure(); return; }
       if (inbox) {
         const activity = await response.json();
+        if (dashboardVersion && activity.version && activity.version !== dashboardVersion) {
+          stopped = true;
+          stream?.close();
+          location.reload();
+          return;
+        }
         const panel = document.getElementById("phone-alerts");
         if (panel && panel.dataset.away !== String(activity.away === true)) {
           panel.dataset.away = String(activity.away === true);
