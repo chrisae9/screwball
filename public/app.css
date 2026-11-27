@@ -106,6 +106,9 @@ body {
 /* WebKit needs a real fixed element to suppress the Home Screen scroll-edge blur. */
 @supports (-webkit-touch-callout: none) {
   @media (display-mode: standalone) {
+    /* Keep a top-edge pull from exposing the canvas above the Back row. */
+    :root:has(body > .nav > .back-link) { overscroll-behavior-y: none; }
+
     .status-bar-edge {
       display: block;
       position: fixed;
