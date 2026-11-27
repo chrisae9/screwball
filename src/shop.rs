@@ -123,6 +123,15 @@ fn sample_word(id: &str) -> &'static str {
         "fox" => "EYE",
         "scarab" => "JADE",
         "phoenix" => "ASH",
+        "kirby" => "STAR",
+        "jett" => "GUST",
+        "sage" => "JADE",
+        "volleyball" => "ACE",
+        "tracer" => "TIME",
+        "dva" => "MECH",
+        "calico" => "PURR",
+        "tuxedo" => "TUX",
+        "mooncat" => "MOON",
         _ => "ACE",
     }
 }
@@ -281,8 +290,8 @@ fn detail(item: &Item, s: &Studio, collection: bool) -> String {
 fn inventory(s: &Studio, collection: bool) -> String {
     let mut out = String::new();
     if !collection {
-        let feature = find("phoenix").expect("featured achievement in catalog");
-        write!(out, r##"<a class="shop-feature" href="#achievements"><div><small>Legendary achievement</small><h2>{}</h2><span>Explore achievements ›</span></div>{}</a>"##, feature.name, specimen(feature)).unwrap();
+        let feature = find("kirby").expect("featured achievement in catalog");
+        write!(out, r##"<a class="shop-feature" href="#achievements"><div><small>Featured achievement</small><h2>{}</h2><span>Explore achievements ›</span></div>{}</a>"##, feature.name, specimen(feature)).unwrap();
     }
     out.push_str(&earn(s));
     let catalog = cosmetics::catalog();

@@ -121,3 +121,48 @@
   --cosmetic-tile-edge: #d48a63;
   --cosmetic-tile-ink: #ffecd1;
 }
+[data-tile-style="kirby"] {
+  --cosmetic-tile-face: url("finishes/kirby-b5f37127f0.webp") center / cover no-repeat #6c284d;
+  --cosmetic-tile-edge: #ef99b6;
+  --cosmetic-tile-ink: #ffeef3;
+}
+[data-tile-style="jett"] {
+  --cosmetic-tile-face: url("finishes/jett-b8951d2826.webp") center / cover no-repeat #132f4d;
+  --cosmetic-tile-edge: #92dbe4;
+  --cosmetic-tile-ink: #f1fdff;
+}
+[data-tile-style="sage"] {
+  --cosmetic-tile-face: url("finishes/sage-106bb58191.webp") center / cover no-repeat #163538;
+  --cosmetic-tile-edge: #83d5bb;
+  --cosmetic-tile-ink: #edfff4;
+}
+[data-tile-style="volleyball"] {
+  --cosmetic-tile-face: url("finishes/volleyball-aa095efa2e.webp") center / cover no-repeat #183d63;
+  --cosmetic-tile-edge: #eabd5a;
+  --cosmetic-tile-ink: #fff9e7;
+}
+[data-tile-style="tracer"] {
+  --cosmetic-tile-face: url("finishes/tracer-b8120b64e5.webp") center / cover no-repeat #4a2e29;
+  --cosmetic-tile-edge: #ecae65;
+  --cosmetic-tile-ink: #fff3d9;
+}
+[data-tile-style="dva"] {
+  --cosmetic-tile-face: url("finishes/dva-0d02747f43.webp") center / cover no-repeat #34304f;
+  --cosmetic-tile-edge: #f0a4d1;
+  --cosmetic-tile-ink: #fff4ff;
+}
+[data-tile-style="calico"] {
+  --cosmetic-tile-face: url("finishes/calico-1058f157b2.webp") center / cover no-repeat #eed8b4;
+  --cosmetic-tile-edge: #ad816b;
+  --cosmetic-tile-ink: #30251e;
+}
+[data-tile-style="tuxedo"] {
+  --cosmetic-tile-face: url("finishes/tuxedo-062df5fc2e.webp") center / cover no-repeat #253738;
+  --cosmetic-tile-edge: #b6ccbf;
+  --cosmetic-tile-ink: #fffae6;
+}
+[data-tile-style="mooncat"] {
+  --cosmetic-tile-face: url("finishes/mooncat-7f9b2b7d85.webp") center / cover no-repeat #201e3b;
+  --cosmetic-tile-edge: #a39bd1;
+  --cosmetic-tile-ink: #fff5df;
+}

@@ -7,10 +7,12 @@ test("a new player can preview priced finishes and manage their Classic board ac
   await page.goto("/");
   await page.locator(".primary-menu").getByRole("link", { name: "Shop" }).click();
   await expect(page.locator(".coin-balance")).toContainText("0 coins");
-  await expect(page.locator(".shop-card")).toHaveCount(24);
+  await expect(page.locator(".shop-card")).toHaveCount(33);
   const achievements = page.locator("#achievements");
-  await expect(achievements.locator(".shop-card")).toHaveCount(10);
-  await expect(achievements.locator("header")).toContainText("0 of 10 earned");
+  await expect(achievements.locator(".shop-card")).toHaveCount(19);
+  await expect(achievements.locator("header")).toContainText("0 of 19 earned");
+  await expect(page.locator(".shop-feature")).toContainText("Kirby’s Warp Star");
+  await expect(page.locator(".shop-feature")).toHaveAttribute("href", "#achievements");
   const tabs = page.getByRole("navigation", {name:"Shop views"});
   await tabs.getByRole("link", {name:"My collection"}).click();
   await expect(page.locator(".shop-card")).toHaveCount(1);

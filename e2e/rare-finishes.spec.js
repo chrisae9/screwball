@@ -10,6 +10,15 @@ import {createInterface} from "node:readline";
 const tiles = [["koi",90],["circuit",125],["kintsugi",200],["rift",275],["serpent",0],["orrery",0]];
 
 const rules = {
+  kirby: /STAR, DREAM or PUFF/,
+  jett: /DASH, WIND or GUST/,
+  sage: /JADE, WALL or HEAL/,
+  volleyball: /SET, ACE or DIG/,
+  tracer: /TIME, BLINK or ZIP/,
+  dva: /BOOST, MECH or FLY/,
+  calico: /PATCH, COAT or PURR/,
+  tuxedo: /TUX, PAWS or SOCK/,
+  mooncat: /MOON, PROWL or NIGHT/,
   moth: /blank/i,
   junction: /3 words/i,
   kraken: /8.?(?:letter|or more letters)/i,
@@ -17,7 +26,8 @@ const rules = {
   scarab: /J.*Q.*X.*Z/i,
   phoenix: /3 (?:different |distinct )?games/i,
 };
-const achievements = Object.keys(rules);
+const themed = ["kirby","jett","sage","volleyball","tracer","dva","calico","tuxedo","mooncat"];
+const original = ["moth","junction","kraken","fox","scarab","phoenix"];
 
 function historicGame(template, opponent, turns) {
   const game = structuredClone(template);
@@ -50,6 +60,8 @@ async function seed(dir) {
   user.settings = {cosmetics:{rewards:{finishes,daily,best_play:75}}};
   const opponent = {...structuredClone(user), id:randomUUID(), username:"robin", display_name:"Robin"};
   const archives = [
+    ...["STAR","GUST","WALL","ACE","BLINK","MECH","PURR","SOCK","MOON"].map(letters =>
+      [{letters, row:7,col:7,words:[letters],points:10}]),
     [{letters:"JAZZILY", row:7,col:4, blank:3,words:["JAZZILY"],points:100}],
     [{letters:"EQUINOX", row:7,col:4, words:["EQUINOX"],points:96}],
     [{letters:"EXAMPLE", row:7,col:4, words:["EXAMPLE"],points:86},
@@ -75,7 +87,7 @@ async function seed(dir) {
 
 const paint = item => item.first().evaluate(el => getComputedStyle(el).backgroundImage);
 
-test("shop credits legacy moves and equips earned finishes on letters, blanks and drafts", async ({page, browser}) => {
+async function verifyFinishes(page, browser, achievements, priced) {
   const dir = await mkdtemp(join(tmpdir(), "scrabble-rare-"));
   let server, exited;
   try {
@@ -106,8 +118,9 @@ test("shop credits legacy moves and equips earned finishes on letters, blanks an
           expect(result.status(), action + " locked " + id).toBe(422);
         }
       }));
-      await locked.goto("/shop?item=phoenix");
-      await expect(locked.locator(".unlock-rule")).toContainText(rules.phoenix);
+      const first = achievements[0];
+      await locked.goto("/shop?item=" + first);
+      await expect(locked.locator(".unlock-rule")).toContainText(rules[first]);
       await expect(locked.locator(".finish-info button")).toHaveCount(0);
       await locked.goto("/shop");
       await Promise.all(achievements.map(id =>
@@ -123,6 +136,7 @@ test("shop credits legacy moves and equips earned finishes on letters, blanks an
     const paints = new Set();
     async function choose(id, cost) {
       await page.goto(base + "/shop?item=" + id);
+      if (rules[id]) await expect(page.locator(".unlock-rule")).toContainText(rules[id]);
       await page.getByRole("button",{name:cost ? /Unlock.*equip/i : "Equip",exact:!cost}).click();
       balance -= cost;
       await expect(page.locator(".coin-balance")).toContainText(balance + " coins");
@@ -162,15 +176,20 @@ test("shop credits legacy moves and equips earned finishes on letters, blanks an
       expect(Math.abs(geometry.width - geometry.height)).toBeLessThan(.25);
       await page.getByRole("button",{name:"Clear",exact:true}).click();
     }
-    for (const item of [...tiles, ...achievements.map(id => [id,0])]) {
+    for (const item of [...priced, ...achievements.map(id => [id,0])]) {
       // Each selection spends this player's balance and changes the same board.
       // eslint-disable-next-line no-await-in-loop
       await checkTile(item);
     }
-    expect(paints.size).toBe(tiles.length + achievements.length);
+    expect(paints.size).toBe(priced.length + achievements.length);
   } finally {
     if (server && server.exitCode === null && server.signalCode === null) server.kill();
     if (exited) await exited;
     await rm(dir,{recursive:true,force:true});
   }
-});
+}
+for (const [group, achievements, priced] of [["word challenges",themed,[]], ["original finishes",original,tiles]]) {
+  test("shop credits legacy moves and equips " + group + " on letters, blanks and drafts", async ({page, browser}) => {
+    await verifyFinishes(page, browser, achievements, priced);
+  });
+}
