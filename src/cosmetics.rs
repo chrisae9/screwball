@@ -1031,7 +1031,7 @@ mod tests {
                 .iter()
                 .filter(|item| item.rarity.is_some())
                 .count(),
-            21
+            24
         );
     }
 
