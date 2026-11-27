@@ -132,6 +132,9 @@ fn sample_word(id: &str) -> &'static str {
         "calico" => "PURR",
         "tuxedo" => "TUX",
         "mooncat" => "MOON",
+        "vault101" => "GEAR",
+        "pipboy" => "RAD",
+        "nukacola" => "COLA",
         _ => "ACE",
     }
 }

@@ -10,6 +10,9 @@ import {createInterface} from "node:readline";
 const tiles = [["koi",90],["circuit",125],["kintsugi",200],["rift",275],["serpent",0],["orrery",0]];
 
 const rules = {
+  vault101: /VAULT, GEAR or SHELTER/,
+  pipboy: /RAD, SCAN or BYTE/,
+  nukacola: /COLA, CAP or FIZZ/,
   kirby: /STAR, DREAM or PUFF/,
   jett: /DASH, WIND or GUST/,
   sage: /JADE, WALL or HEAL/,
@@ -27,6 +30,7 @@ const rules = {
   phoenix: /3 (?:different |distinct )?games/i,
 };
 const themed = ["kirby","jett","sage","volleyball","tracer","dva","calico","tuxedo","mooncat"];
+const fallout = ["vault101", "pipboy", "nukacola"];
 const original = ["moth","junction","kraken","fox","scarab","phoenix"];
 
 function historicGame(template, opponent, turns) {
@@ -60,7 +64,7 @@ async function seed(dir) {
   user.settings = {cosmetics:{rewards:{finishes,daily,best_play:75}}};
   const opponent = {...structuredClone(user), id:randomUUID(), username:"robin", display_name:"Robin"};
   const archives = [
-    ...["STAR","GUST","WALL","ACE","BLINK","MECH","PURR","SOCK","MOON"].map(letters =>
+    ...["STAR","GUST","WALL","ACE","BLINK","MECH","PURR","SOCK","MOON","GEAR","RAD","COLA"].map(letters =>
       [{letters, row:7,col:7,words:[letters],points:10}]),
     [{letters:"JAZZILY", row:7,col:4, blank:3,words:["JAZZILY"],points:100}],
     [{letters:"EQUINOX", row:7,col:4, words:["EQUINOX"],points:96}],
@@ -188,7 +192,7 @@ async function verifyFinishes(page, browser, achievements, priced) {
     await rm(dir,{recursive:true,force:true});
   }
 }
-for (const [group, achievements, priced] of [["word challenges",themed,[]], ["original finishes",original,tiles]]) {
+for (const [group, achievements, priced] of [["Fallout finishes",fallout,[]], ["word challenges",themed,[]], ["original finishes",original,tiles]]) {
   test("shop credits legacy moves and equips " + group + " on letters, blanks and drafts", async ({page, browser}) => {
     await verifyFinishes(page, browser, achievements, priced);
   });

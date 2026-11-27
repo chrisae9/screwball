@@ -78,6 +78,24 @@ pub fn catalog() -> &'static [Item] {
             "Epic",
             ["MOON", "PROWL", "NIGHT"],
         ),
+        Item::word_set(
+            "vault101",
+            "Vault 101",
+            "Epic",
+            ["VAULT", "GEAR", "SHELTER"],
+        ),
+        Item::word_set(
+            "pipboy",
+            "Pip-Boy Terminal",
+            "Rare",
+            ["RAD", "SCAN", "BYTE"],
+        ),
+        Item::word_set(
+            "nukacola",
+            "Nuka-Cola Caps",
+            "Epic",
+            ["COLA", "CAP", "FIZZ"],
+        ),
         Item::tile("bingo", "Sevenfold", 0, true),
         Item::tile("aurora", "Aurora", 0, true),
         Item::tile("koi", "Koi Pond", 90, false).rarity("Rare"),
@@ -768,7 +786,7 @@ mod tests {
             .iter()
             .filter_map(|item| Some((item, item.word_unlock?)))
             .collect();
-        assert_eq!(themes.len(), 9);
+        assert_eq!(themes.len(), 12);
         for (item, words) in themes {
             let [first, second, third] = words;
             let rule = format!("Form {first}, {second} or {third}");
@@ -1034,7 +1052,7 @@ mod tests {
             serde_json::json!({"tile":"cherry","rack":"walnut","uniform_board":true});
         let previous_balance = 600 - 21 - 80 - 65 - 50 - 95;
         let mut migrated: Wallet = serde_json::from_value(saved).unwrap();
-        assert_eq!(catalog().len(), 33);
+        assert_eq!(catalog().len(), 36);
         for retired in [
             "maple", "walnut", "rosewood", "midnight", "torii", "reactor",
         ] {
