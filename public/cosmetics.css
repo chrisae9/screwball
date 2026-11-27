@@ -62,7 +62,7 @@
   --cosmetic-tile-detail: inset 0 0 0 1px #f8d58f49, inset 0 -2px #160c19;
 }
 [data-tile-style="koi"] {
-  --cosmetic-tile-face: url("finishes/koi-ab1b2e5899.webp") center / cover no-repeat #12464a;
+  --cosmetic-tile-face: url("finishes/koi-944b5f30f1.webp") center / cover no-repeat #12464a;
   --cosmetic-tile-edge: #81c5ad;
   --cosmetic-tile-ink: #fff4d9;
 }
@@ -82,7 +82,7 @@
   --cosmetic-tile-ink: #fff6e8;
 }
 [data-tile-style="serpent"] {
-  --cosmetic-tile-face: url("finishes/serpent-f1748b1368.webp") center / cover no-repeat #193d39;
+  --cosmetic-tile-face: url("finishes/serpent-07007fe68c.webp") center / cover no-repeat #193d39;
   --cosmetic-tile-edge: #95ae79;
   --cosmetic-tile-ink: #fff6d4;
 }
