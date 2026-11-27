@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 
 const game = "/games/1756fa1c-f0b0-48d0-8304-8a79c4230ef6";
-const colors = {dark: "rgb(23, 22, 19)", light: "rgb(247, 244, 237)"};
+const colors = {dark: "rgb(0, 0, 0)", light: "rgb(245, 246, 248)"};
 const palette = (page, mode) => expect(page.locator("body")).toHaveCSS("background-color", colors[mode]);
 
 test("appearance follows the phone or a saved override without disturbing a move", async ({page, context}) => {

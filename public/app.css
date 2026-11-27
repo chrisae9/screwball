@@ -1,18 +1,18 @@
 :root {
   color-scheme: light;
-  --bg: #f7f4ed;
-  --surface: #fffdf8;
+  --bg: #f5f6f8;
+  --surface: #fff;
   --on-accent: #fff;
-  --ink: #2e2a24;
-  --muted: #6d655a;
-  --accent: #a63f20;
+  --ink: #20232a;
+  --muted: #5c6470;
+  --accent: #ae293b;
   --draft-tile: #d8e9f4;
   --draft-edge: #4a718a;
   --draft-ink: #173546;
   --draft-success: #286044;
   --draft-warning: #944326;
-  --line: #e0d9cb;
-  --border: #e0d9cb;
+  --line: #d8dce2;
+  --border: var(--line);
   --board-bg: #e3dece;
   --dl: #bcd9e6;
   --tl: #5fa8c4;
@@ -76,7 +76,10 @@ body {
   position: relative;
   display: grid;
   place-items: center;
-  width: min(9vw, clamp(1.65rem, 5.7vw, 2.1rem));
+  --brand-edge: min(9vw, clamp(1.65rem, 5.7vw, 2.1rem));
+  flex: none;
+  width: var(--brand-edge);
+  height: var(--brand-edge);
   aspect-ratio: 1;
   border: 1px solid #ddbd83;
   border-radius: 4px;
@@ -231,7 +234,8 @@ body {
 
 .board {
   display: grid;
-  grid-template-columns: repeat(15, 1fr);
+  grid-template-columns: repeat(15, minmax(0, 1fr));
+  grid-template-rows: repeat(15, minmax(0, 1fr));
   gap: 2px;
   background: var(--line);
   border: 2px solid var(--line);
@@ -253,7 +257,8 @@ body {
   font-size: min(2cqw, 0.65rem);
   font-weight: 600;
   color: color-mix(in srgb, var(--ink) 70%, transparent);
-  aspect-ratio: 1 / 1;
+  min-width: 0;
+  min-height: 0;
 }
 
 .premium-dl { background: var(--dl); }
@@ -424,15 +429,6 @@ body {
 
 .muted {
   color: var(--muted);
-}
-
-.notification-controls {
-  margin-top: 0.75rem;
-}
-
-.notification-controls .button {
-  margin-top: 0;
-  font-size: 0.85rem;
 }
 
 .card.diagnostics { margin-top: 1rem; }
@@ -1603,12 +1599,6 @@ section.card + section.card {
 .draft-total { font-variant-numeric: tabular-nums; }
 @media (max-width: 480px) {
   .draft-review { margin: .2rem .25rem 0; padding: .3rem .5rem; }
-  .game-page .rack:has(.rack-backspace-tile) { flex-wrap: nowrap; gap: .25rem; }
-  .game-page .rack:has(.rack-backspace-tile) .rack-tile {
-    width: min(2.4rem, calc((100% - 1.75rem) / 8));
-    min-width: 0;
-    padding-inline: 0;
-  }
   .game-page .nav { column-gap: .35rem; padding-inline: .5rem; }
   .game-page .nav-links { gap: .3rem; }
   /* Keep both names and scores visible between Back and the game actions. */

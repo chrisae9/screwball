@@ -4,8 +4,8 @@
   "description": "Play Scrabble with friends and take turns at your own pace.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#f7f4ed",
-  "theme_color": "#f7f4ed",
+  "background_color": "#f5f6f8",
+  "theme_color": "#f5f6f8",
   "icons": [
     {
       "src": "/public/scrabble-192.png",

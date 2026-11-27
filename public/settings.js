@@ -1,3 +1,29 @@
+const ios = /iPad|iPhone|iPod/.test(navigator.userAgent)
+  || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+
+function setupInstallGuide(guide) {
+  if (!guide) return;
+  const standalone = matchMedia("(display-mode: standalone)");
+  const ua = navigator.userAgent;
+  const chromeIOS = /CriOS\//.test(ua);
+  const safariIOS = ios && /Safari\//.test(ua) && !/CriOS|FxiOS|EdgiOS|OPiOS/.test(ua);
+  const android = /Android/.test(ua) && /Chrome\//.test(ua)
+    && !/EdgA|OPR\/|SamsungBrowser|Firefox|; wv\)/.test(ua);
+  if (!(chromeIOS || safariIOS || android) || standalone.matches || navigator.standalone) return;
+  const steps = chromeIOS || safariIOS
+    ? [chromeIOS ? "Tap Share beside the address bar in Chrome." : "Open the Share menu in Safari.", "Choose Add to Home Screen. Scroll down in the share sheet if needed.", "Keep the name Scrabble and tap Add."]
+    : ["Tap the three-dot menu in Chrome.", "Choose Install and create shortcut or Add to Home screen.", "Tap Install and confirm."];
+  for (const step of steps) {
+    const li = document.createElement("li");
+    li.textContent = step;
+    guide.querySelector("ol").append(li);
+  }
+  guide.hidden = false;
+  window.addEventListener("appinstalled", () => { guide.hidden = true; });
+  standalone.addEventListener("change", () => { guide.hidden = standalone.matches; });
+}
+setupInstallGuide(document.querySelector("#install-guide"));
+
 function localizeAwayTime() {
   const time = document.getElementById("away-until");
   if (time) time.textContent = new Intl.DateTimeFormat(undefined, {
@@ -101,20 +127,10 @@ async function enableNotifications() {
   window.dispatchEvent(new CustomEvent("scrabble-push-subscription", {detail: subscription.endpoint}));
 }
 
-const homePanel = document.getElementById("phone-alerts");
 let updating = false;
 
 async function refreshStatus(prompt = false) {
   if (updating || !statusEl || !buttonEl || document.hidden) return;
-  if (homePanel?.dataset.away === "true") {
-    homePanel.hidden = false;
-    setStatus("Away mode is on. You can resume alerts in Settings.");
-    buttonEl.hidden = true;
-    return;
-  }
-  const ios = /iPad|iPhone|iPod/.test(navigator.userAgent)
-    || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-  if (homePanel) homePanel.hidden = false;
   if (ios && !(navigator.standalone || matchMedia("(display-mode: standalone)").matches)) {
     setStatus("For iPhone or iPad alerts, add Scrabble to your Home Screen, then open it there and enable notifications.");
     buttonEl.hidden = true;
@@ -124,7 +140,6 @@ async function refreshStatus(prompt = false) {
   if (!support.notifications || !support.serviceWorker || !support.pushManager) {
     setStatus("Notifications aren't supported in this browser.");
     buttonEl.hidden = true;
-    if (homePanel) homePanel.hidden = true;
     return;
   }
   if (Notification.permission === "denied") {
@@ -134,7 +149,7 @@ async function refreshStatus(prompt = false) {
   }
   buttonEl.textContent = "Enable notifications";
   if (!prompt && Notification.permission !== "granted") {
-    setStatus(homePanel ? "Get an alert when someone invites you or it’s your turn." : "Notifications are off.");
+    setStatus("Notifications are off.");
     buttonEl.hidden = false;
     return;
   }
@@ -145,7 +160,6 @@ async function refreshStatus(prompt = false) {
     await enableNotifications();
     setStatus(document.querySelector('.away-settings:not([data-away-state="off"])') ? "This device is registered for notifications." : "Notifications are on.");
     buttonEl.hidden = true;
-    if (homePanel) homePanel.hidden = true;
   } catch {
     const denied = Notification.permission === "denied";
     setStatus(denied ? "Notifications are blocked in your browser settings." : "Phone alerts aren't connected yet. Tap to retry.");
@@ -155,7 +169,6 @@ async function refreshStatus(prompt = false) {
     updating = false;
   }
 }
-homePanel?.addEventListener("awaychange", () => refreshStatus());
 buttonEl?.addEventListener("click", () => refreshStatus(true));
 document.addEventListener("visibilitychange", () => refreshStatus());
 window.addEventListener("online", () => refreshStatus());

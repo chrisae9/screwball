@@ -29,18 +29,19 @@ test("find a player, receive an invitation, and accept the reserved seat", async
   } finally { await guest.close(); }
 });
 
-test("Chrome install steps match the phone and disappear in standalone mode", async ({browser}) => {
+test("Settings install steps match the phone and disappear in standalone mode", async ({browser, baseURL}) => {
   const generic = "Mozilla/5.0 ";
   const examples = [
     [generic + "(iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 CriOS/141.0 Mobile/15E148 Safari/604.1", "Tap Share"],
+    [generic + "(iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1", "Share menu in Safari"],
     [generic + "(Linux; Android 15; Pixel 8) AppleWebKit/537.36 Chrome/141.0 Mobile Safari/537.36", "three-dot menu"],
   ];
   await Promise.all(examples.map(async ([userAgent, instruction]) => {
-    const context = await browser.newContext({baseURL:"http://localhost:8123",userAgent,viewport:{width:390,height:844}});
+    const context = await browser.newContext({baseURL,userAgent,viewport:{width:390,height:844}});
     try {
       const page = await context.newPage();
       await page.request.post("/auth/login/begin",{data:{username:"scott"}});
-      await page.goto("/");
+      await page.goto("/settings");
       await page.getByText("Install Scrabble on your phone").click();
       await expect(page.locator("#install-guide ol")).toContainText(instruction);
       await context.addInitScript(() => Object.defineProperty(navigator,"standalone",{value:true}));

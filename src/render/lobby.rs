@@ -295,15 +295,6 @@ pub(super) fn page(activity: HomeActivity, view: LobbyView) -> String {
     } else {
         ""
     };
-    let utilities = if history {
-        String::new()
-    } else {
-        format!(
-            r#"<details id="install-guide" class="card" hidden><summary>Install Scrabble on your phone</summary><ol></ol></details>
-<aside class="card notification-controls" id="phone-alerts" data-away="{}" hidden><strong>Phone alerts</strong><p class="muted" id="notif-status" role="status"></p><button type="button" id="notif-enable" class="button" hidden>Enable notifications</button></aside>"#,
-            activity.away
-        )
-    };
     let empty_msg = if history {
         "No finished games yet."
     } else {
@@ -324,7 +315,7 @@ pub(super) fn page(activity: HomeActivity, view: LobbyView) -> String {
 <div id="my-games" tabindex="-1" data-dashboard-version="{version}">{games}</div>
 <div id="open-games" hidden>{open}</div>
 <div class="lobby-empty"{empty_hidden}><h2>{empty_msg}</h2><button class="lobby-reset" type="button" hidden>Clear search and filters</button></div>
-<p class="match-sr" role="status" id="lobby-count"></p>{utilities}</div>"#,
+<p class="match-sr" role="status" id="lobby-count"></p></div>"#,
         inbox_hidden = if history { " hidden" } else { "" },
         invitations = if history { "" } else { &activity.invitations },
         version = activity.version,
@@ -332,10 +323,9 @@ pub(super) fn page(activity: HomeActivity, view: LobbyView) -> String {
         open = activity.open_games
     );
     let head = format!(
-        r#"<link rel="stylesheet" href="{}"><script type="module" src="{}"></script><script type="module" src="{}"></script>"#,
+        r#"<link rel="stylesheet" href="{}"><script type="module" src="{}"></script>"#,
         asset("/public/lobby.css"),
-        asset("/public/lobby.js"),
-        asset("/public/settings.js")
+        asset("/public/lobby.js")
     );
     super::layout_with_head(
         if history {

@@ -73,3 +73,21 @@ test("the home rack and sign-in form fit a narrow phone with large text", async 
   expect(bounds.height).toBeGreaterThanOrEqual(44);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(320);
 });
+
+test("the alert and Settings buttons fit beside the square title on a 320px phone", async ({page}) => {
+  await page.setViewportSize({width:320, height:693});
+  await page.request.post("/auth/login/begin", {data:{username:"scott"}});
+  await page.goto("/");
+  const header = page.locator("body > .nav");
+  await expect(header.locator(".nav-notice")).toBeVisible();
+  const geometry = await header.evaluate(nav => {
+    const tiles = [...nav.querySelectorAll(".brand-tile")].map(el => el.getBoundingClientRect());
+    const actions = [...nav.querySelectorAll(".nav-links a")].map(el => el.getBoundingClientRect());
+    return {
+      square:tiles.length === 8 && tiles.every(r => Math.abs(r.width - r.height) < .25),
+      fits:actions.every(r => r.height >= 44 && r.width >= 44 && r.right <= innerWidth),
+      overflow: document.documentElement.scrollWidth - innerWidth,
+    };
+  });
+  expect(geometry).toEqual({square:true, fits:true, overflow:0});
+});

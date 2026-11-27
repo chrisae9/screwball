@@ -1,10 +1,10 @@
 .lobby { min-width: 0; }
 .lobby h1,.lobby h2,.lobby p {margin:0;}
 .lobby-head,.lobby-controls,.lobby-tabs,.lobby-search,.lobby-button,.lobby-row,.lobby-section h2,.lobby-list .open-match {display:flex;align-items:center;}
-.lobby-head {justify-content:space-between;gap:12px;margin-bottom:18px}
-.lobby-head h1 {font-size:clamp(30px,4vw,43px);line-height:1.13;letter-spacing:-.052em;}
+.lobby-head {justify-content:space-between;gap:12px;margin-bottom:16px}
+.lobby-head h1 {font-size:2rem;line-height:1.15;}
 .lobby-button,.lobby-tabs button,.lobby-search,.lobby select,.lobby-reset {border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink);font:inherit;}
-.lobby-button {min-height:44px;justify-content:center;gap:7px;padding:8px 14px;font-weight:650;text-decoration:none;cursor:pointer}
+.lobby-button {min-height:44px;justify-content:center;gap:7px;padding:8px 14px;font-weight:600;text-decoration:none;cursor:pointer}
 .lobby-button.lobby-primary {background:var(--accent);border-color:transparent;color:var(--on-accent);}
 .lobby-primary span {font-weight:400;}
 .lobby-controls {gap:7px;}
@@ -15,25 +15,25 @@
 .lobby-tabs {gap:6px;flex-wrap:wrap;margin-top:12px;}
 .lobby-tabs button {min-height:44px;padding:4px 12px;background:transparent;color:var(--muted);font-size:14px;font-weight:600;cursor:pointer;}
 .lobby-tabs button[aria-pressed=true] {background:var(--ink);border-color:var(--ink);color:var(--surface);}
-.lobby-section {margin-top:23px;}
-.lobby-section h2 {gap:9px;font-size:19px;letter-spacing:-.035em;margin:0 2px 8px;}
+.lobby-section {margin-top:20px;}
+.lobby-section h2 {gap:9px;font-size:1.125rem;margin:0 2px 8px;}
 .lobby-section[data-group=turn] h2::before {content:"";width:8px;height:8px;border-radius:50%;background:var(--accent);}
 .lobby-count {font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums;}
 .lobby-list {margin:0;padding:0;list-style:none;background:var(--surface);border:1px solid var(--line);border-radius:13px;overflow:hidden;}
 .lobby-list li:not([hidden]) ~ li:not([hidden]) {border-top:1px solid var(--line);}
-.lobby-row {width:100%;padding:12px 14px;min-height:73px;gap:12px;color:var(--ink);text-decoration:none;}
+.lobby-row {width:100%;padding:12px 14px;min-height:64px;gap:12px;color:var(--ink);text-decoration:none;}
 .lobby-row:hover,.lobby-row:focus-visible {background:color-mix(in srgb,var(--accent) 8%,var(--surface));}
 .lobby-row:focus-visible {outline:3px solid var(--accent);outline-offset:-3px;}
 .lobby-row .player-avatar {width:40px;height:40px;border-radius:11px;flex:none;}
 .lobby-info {flex:1;min-width:0;}
-.lobby-name {display:block;font-size:16px;font-weight:690;letter-spacing:-.018em;overflow-wrap:anywhere;}
+.lobby-name {display:block;font-size:16px;font-weight:600;overflow-wrap:anywhere;}
 .lobby-meta {display:block;color:var(--muted);font-size:13px;line-height:1.45;overflow-wrap:anywhere;}
-.lobby-meta b {color:var(--ink);font-weight:680;}
+.lobby-meta b {color:var(--ink);font-weight:600;}
 .lobby-scores {text-align:right;font-variant-numeric:tabular-nums;max-width:35%;line-height:1.3;}
-.lobby-scores strong {display:block;font-size:17px;letter-spacing:-.02em;white-space:nowrap;}
+.lobby-scores strong {display:block;font-size:1rem;white-space:nowrap;}
 .lobby-scores small {display:block;font-size:11px;line-height:1.5;color:var(--muted);overflow-wrap:anywhere;}
 .lobby-chevron {color:var(--muted);font-size:20px;}
-.lobby-outcome {font-weight:650;padding:1px 6px;border-radius:5px;background:color-mix(in srgb,var(--muted) 15%,var(--surface));}
+.lobby-outcome {font-weight:600;padding:1px 6px;border-radius:5px;background:color-mix(in srgb,var(--muted) 15%,var(--surface));}
 .lobby-outcome[data-result=Won] {color:var(--draft-success);background:color-mix(in srgb,var(--draft-success) 14%,var(--surface));}
 .lobby-outcome[data-result=Lost] {color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,var(--surface));}
 .lobby-list .open-match {padding:0;border:0;gap:0;}
@@ -43,12 +43,11 @@
 #lobby-options {display:flex;flex-wrap:wrap;gap:9px;align-items:end;}
 #lobby-options label {display:grid;min-width:110px;flex:1;gap:5px;color:var(--muted);font-size:13px;font-weight:600;}
 #lobby-options select {width:100%;min-height:44px;font-size:15px;padding:5px;}
-.lobby-reset {min-height:44px;padding:4px 8px;border:0;color:var(--accent);font-weight:650;cursor:pointer;}
+.lobby-reset {min-height:44px;padding:4px 8px;border:0;color:var(--accent);font-weight:600;cursor:pointer;}
 .lobby-empty h2,.lobby #invitations h2 {font-size:17px;}
-.lobby #install-guide,.lobby #phone-alerts {margin:18px 0 0;}
 @media(max-width:720px){
-  .lobby-head{margin-bottom:14px}.lobby-tabs button{padding-inline:10px}.lobby-section{margin-top:21px}
-  .lobby-row{padding:11px 10px;gap:9px}.lobby-row .player-avatar{width:35px;height:35px}
+  .lobby-head{margin-bottom:14px}.lobby-tabs button{padding-inline:10px}.lobby-section{margin-top:16px}
+  .lobby-row{padding:8px 10px;gap:9px}.lobby-row .player-avatar{width:35px;height:35px}
   .lobby-chevron{display:none}.lobby-scores strong{font-size:16px}
 }
 @media(max-width:365px){.lobby-row{gap:7px}.lobby-row .player-avatar{width:29px;height:29px;border-radius:8px}.lobby-scores small{font-size:10px}.lobby-tabs button{font-size:13px;padding-inline:8px}.lobby-name{font-size:15px}}

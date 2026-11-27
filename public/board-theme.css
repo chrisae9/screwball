@@ -1,12 +1,12 @@
 /* The board and the rack keep the same ivory wood in both appearance modes. */
 .game-page {
-  --board-bg: light-dark(#f2ecdd, #35332c);
-  --grid-line: light-dark(#cfc4af, #474236);
-  --dl: light-dark(#d9e6eb, #42535a);
-  --tl: light-dark(#a1c5d5, #385d72);
-  --dw: light-dark(#f2cfb9, #674b3d);
-  --tw: light-dark(#d7886a, #834d38);
-  --premium-ink: light-dark(#54483c, #f2e4ce);
+  --board-bg: light-dark(#f2ecdd, #17191d);
+  --grid-line: light-dark(#cfc4af, #33373e);
+  --dl: light-dark(#d9e6eb, #334d5f);
+  --tl: light-dark(#a1c5d5, #275871);
+  --dw: light-dark(#f2cfb9, #673f46);
+  --tw: light-dark(#d7886a, #843948);
+  --premium-ink: light-dark(#54483c, #f5f5f5);
   --tile: #fae8bc;
   --tile-edge: #ddbd83;
   --tile-ink: #32291d;
@@ -67,14 +67,18 @@ body.game-page { overflow-y: auto; }
   border-color: var(--last-edge);
   box-shadow: inset 0 -2px var(--last-edge);
 }
-.game-page .cell .tile-letter { font-size: clamp(.65rem, 3.7cqw, 1.55rem); font-weight: 650; }
+.game-page .cell .tile-letter { font-size: clamp(.65rem, 3.9cqw, 1.45rem); font-weight: 500; }
 .game-page .cell .tile-points { font-size: clamp(.3rem, 1.45cqw, .6rem); }
 .game-page .rack-area { margin-top: .45rem; }
 .game-page .rack {
-  display: flex;
+  --rack-slots: 7;
+  --rack-gap: clamp(2px, .65vw, 6px);
+  --rack-tile-max: 48px;
+  --rack-side: min(var(--rack-tile-max), calc((100% + var(--rack-gap)) / var(--rack-slots) - var(--rack-gap)));
+  display: grid;
+  grid-template-columns: repeat(var(--rack-slots), var(--rack-side));
   justify-content: center;
-  flex-wrap: nowrap;
-  gap: clamp(2px,.8vw,6px);
+  gap: var(--rack-gap);
   padding: .4rem;
   border: 1px solid var(--line);
   border-bottom: 3px solid var(--grid-line);
@@ -82,8 +86,8 @@ body.game-page { overflow-y: auto; }
   background: var(--surface);
 }
 .game-page .rack .rack-tile {
-  width: min(12.6%, 3rem);
-  height: clamp(36px, 10vw, 48px);
+  width: 100%;
+  height: auto;
   aspect-ratio: 1;
   min-width: 0;
   padding: 0;
@@ -205,8 +209,12 @@ body.game-page { overflow-y: auto; }
   .game-page .board-summary { padding: .42rem .5rem; }
   .game-page .board-summary .header-scores { gap: .4rem .7rem; }
 }
+/* Touch layouts reserve the Undo position before the first tile is placed. */
+@media (max-width: 480px), (any-pointer: coarse) {
+  .game-page .rack { --rack-slots: 8; }
+}
 @media (min-width: 481px) and (any-pointer: coarse) {
-  .game-page .rack .rack-tile { width: clamp(44px, 6vw, 52px); height: clamp(44px, 6vw, 52px); }
+  .game-page .rack { --rack-tile-max: clamp(44px, 6vw, 52px); }
 }
 @media (min-width: 900px) and (orientation: landscape) {
   .game-page .game-layout {
@@ -248,5 +256,5 @@ body.game-page { overflow-y: auto; }
   }
 }
 @media (max-width: 359px) {
-  .game-page .nav:has(.nav-links > :nth-child(3 of a, button)) .brand-tile { width: 11px; }
+  .game-page .nav:has(.nav-links > :nth-child(3 of a, button)) .brand-tile { --brand-edge: 11px; }
 }

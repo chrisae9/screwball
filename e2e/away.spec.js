@@ -59,7 +59,8 @@ test("Away mode silences alerts across sessions while invitations remain playabl
     const inbox = await second.newPage();
     await inbox.goto("/");
     await expect(inbox.getByRole("button", {name:"Accept invitation"})).toBeVisible();
-    await expect(inbox.locator("#notif-status")).toContainText("Away mode is on");
+    await expect(inbox.getByRole("link", {name:"View game invitations"})).toHaveCount(0);
+    await expect(inbox.locator("#phone-alerts, #notif-status")).toHaveCount(0);
     await page.getByRole("button", {name:"Resume now"}).click();
     await expect(page.getByRole("link", {name:"View game invitations"})).toBeVisible();
     await secondSettings.bringToFront();

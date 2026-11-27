@@ -169,8 +169,8 @@ fn layout_with_back(
   <link rel="stylesheet" href="{shell_css}">
   <style>:root{{--player-atlas:url('{player_atlas}')}}</style>
   <link id="dark-palette" rel="stylesheet" href="{dark_css}" media="(prefers-color-scheme: dark)">
-  <meta name="theme-color" content="#f7f4ed" media="(prefers-color-scheme: light)">
-  <meta name="theme-color" content="#171613" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#f5f6f8" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
   <script src="{theme_js}"></script>
   <script type="module" src="{presence_js}"></script>
   <script type="module" src="{players_js}"></script>
@@ -429,8 +429,9 @@ pub fn settings_page(
 </section>
 <section class="card">
   <h2>Notifications</h2>
-  <p class="muted" id="notif-status">Checking…</p>
+  <p class="muted" id="notif-status" role="status">Checking…</p>
   <button type="button" id="notif-enable" class="button button-secondary" hidden>Enable notifications</button>
+  <details id="install-guide" hidden><summary>Install Scrabble on your phone</summary><ol></ol></details>
 </section>
 <section class="card away-settings" data-away-state="{away_state}">
   <h2>Away mode</h2>

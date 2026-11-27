@@ -3,7 +3,7 @@
   padding: .4rem max(1rem, calc((100vw - 1052px) / 2));
   min-height: 58px;
 }
-.nav:has(> .brand) .brand-tile { width: 24px; font-size: 15px; }
+.nav:has(> .brand) .brand-tile { --brand-edge: 24px; font-size: 15px; }
 .nav .nav-links { align-items: center; }
 .primary-menu a, .settings-shortcut {
   display: inline-flex;
@@ -39,9 +39,14 @@
 .leaderboard-page .leaderboard { max-width: none; }
 .leaderboard-rules { max-width: 64ch; }
 .game-wordmark { justify-self: center; min-width: 0; }
-.game-wordmark .brand-tile { width: clamp(12px, 4vw, 22px); font-size: clamp(8px, 2.5vw, 14px); }
+.game-wordmark .brand-tile { --brand-edge: clamp(12px, 4vw, 22px); font-size: clamp(8px, 2.5vw, 14px); }
 .game-wordmark .brand-rack { gap: 1px; }
 .primary-menu { background: var(--surface); }
+@media (max-width: 389px) {
+  .nav:has(> .brand) { padding-inline: .5rem; gap: .375rem; }
+  .nav:has(> .brand) .brand-tile { --brand-edge: clamp(18px, 6vw, 23px); }
+  .nav:has(> .brand) .nav-links { gap: .25rem; }
+}
 @media (max-width: 719px) {
   .primary-menu {
     position: fixed;
@@ -77,7 +82,7 @@
   }
   .primary-menu a { justify-content: start; gap: 12px; padding-inline: 12px; font-size: .94rem; font-weight: 600; }
   .primary-menu + main.page { grid-column: 3; min-width: 0; width: 100%; margin: 0; padding: 28px 0 56px clamp(18px, 3vw, 44px); }
-  .nav:has(> .brand) .brand-tile { width: 27px; font-size: 17px; }
+  .nav:has(> .brand) .brand-tile { --brand-edge: 27px; font-size: 17px; }
 }
 .leaderboard-explainer { margin-bottom: 1rem; }
 .leaderboard-explainer summary { color: var(--muted); cursor: pointer; padding-block: .65rem; }

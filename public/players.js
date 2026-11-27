@@ -1,24 +1,3 @@
-function setupInstallGuide(guide) {
-  if (!guide) return;
-  const standalone = matchMedia("(display-mode: standalone)");
-  const ua = navigator.userAgent;
-  const ios = /CriOS\//.test(ua);
-  const android = /Android/.test(ua) && /Chrome\//.test(ua)
-    && !/EdgA|OPR\/|SamsungBrowser|Firefox|; wv\)/.test(ua);
-  if (!(ios || android) || standalone.matches || navigator.standalone) return;
-  const steps = ios
-    ? ["Tap Share beside the address bar in Chrome.", "Choose Add to Home Screen. Scroll down in the share sheet if needed.", "Keep the name Scrabble and tap Add."]
-    : ["Tap the three-dot menu in Chrome.", "Choose Install and create shortcut or Add to Home screen.", "Tap Install and confirm."];
-  for (const step of steps) {
-    const li = document.createElement("li");
-    li.textContent = step;
-    guide.querySelector("ol").append(li);
-  }
-  guide.hidden = false;
-  window.addEventListener("appinstalled", () => { guide.hidden = true; });
-  standalone.addEventListener("change", () => { guide.hidden = standalone.matches; });
-}
-
 const inviteForm = document.querySelector("[data-invite-form]");
 let directoryRequest;
 let requestedAt = 0;
@@ -203,8 +182,6 @@ if (inviteForm) {
   picker.panel.open = true;
 }
 
-setupInstallGuide(document.querySelector("#install-guide"));
-
 const inbox = document.querySelector("#invitations");
 const dashboardVersion = document.getElementById("my-games")?.dataset.dashboardVersion;
 if (inbox || document.querySelector(".back-link, .primary-menu")) {
@@ -286,11 +263,6 @@ if (inbox || document.querySelector(".back-link, .primary-menu")) {
           stream?.close();
           location.reload();
           return;
-        }
-        const panel = document.getElementById("phone-alerts");
-        if (panel && panel.dataset.away !== String(activity.away === true)) {
-          panel.dataset.away = String(activity.away === true);
-          panel.dispatchEvent(new Event("awaychange"));
         }
         replace("invitations", activity.invitations);
         replace("my-games", activity.games);
