@@ -62,3 +62,26 @@ test("a player can check a word, correct it and return from chat with the draft 
   expect(state.seats[0].score).toBe(0);
   expect(state.moves).toHaveLength(0);
 });
+
+for (const colorScheme of ["dark", "light"]) {
+  test(`blank letter choices keep their tile ink in the ${colorScheme} palette`, async ({ page, isMobile }) => {
+    await page.request.post("/auth/login/begin", {data: {username: "shelli"}});
+    await page.goto(fixture);
+    await page.locator('.board:visible .cell[data-row="7"][data-col="7"]').click();
+    await page.locator(".rack button.tile-blank").click();
+    const dialog = page.getByRole("dialog", {name: "Choose a letter"});
+    const letter = dialog.getByRole("button", {name: "Q", exact: true});
+    const ink = await page.locator(".rack button:not(.tile-blank) .tile-letter").first()
+      .evaluate(el => getComputedStyle(el).color);
+    await page.emulateMedia({colorScheme});
+    await expect(letter).toHaveCSS("color", ink);
+    if (!isMobile) {
+      await letter.hover();
+      await expect(letter).toHaveCSS("color", ink);
+      await page.mouse.move(0, 0);
+    }
+    await letter.click();
+    await expect(dialog).toHaveCount(0);
+    await expect(page.locator(".pending-cell .tile-letter")).toHaveText("Q");
+  });
+}

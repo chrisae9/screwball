@@ -1193,6 +1193,7 @@ section.card + section.card {
 }
 
 .letter-btn {
+  color: var(--tile-ink);
   padding: 0.5rem 0;
   background: var(--tile);
   border: 1px solid var(--tile-edge);
@@ -1204,7 +1205,6 @@ section.card + section.card {
 
 .letter-btn:hover {
   border-color: var(--accent);
-  color: var(--accent);
 }
 
 /* Auth (passkey) */
