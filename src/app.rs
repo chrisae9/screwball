@@ -209,7 +209,8 @@ async fn log_request(State(state): State<AppState>, request: Request, next: Next
 /// change without restarting the server, and stale JS/CSS is painful to debug.
 async fn cache_control(request: Request, next: Next) -> Response {
     let path = request.uri().path();
-    let is_asset = path.starts_with("/public/") && !INSTALL_ASSETS.contains(&path);
+    let is_asset =
+        path.starts_with("/public/") && !INSTALL_ASSETS.contains(&path) && !path.ends_with(".html");
     let private = path.starts_with("/api/")
         || path.ends_with("/events")
         || path.ends_with("/state")
