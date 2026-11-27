@@ -65,10 +65,11 @@ function playerPicker(label, choose, otherSeats) {
   const status = panel.querySelector("[role=status]");
   input.setAttribute("aria-label", label);
   let selected = null;
-  let players = [];
+  let players = null;
   let counts = new Map();
 
   function select(player) {
+    input.value = "";
     selected = player;
     summary.querySelector(".player-avatar")?.remove();
     if (player) summary.prepend(playerAvatar(player.avatar_id));
@@ -78,6 +79,7 @@ function playerPicker(label, choose, otherSeats) {
   }
 
   function render() {
+    if (!players) return;
     const query = input.value.trim().toLowerCase();
     const excluded = otherSeats();
     const rows = [];
@@ -118,8 +120,8 @@ function playerPicker(label, choose, otherSeats) {
     for (const other of document.querySelectorAll(".player-picker[open]")) {
       if (other !== panel) other.open = false;
     }
-    input.value = "";
-    input.disabled = true;
+    // A queued details toggle can arrive after someone has already started typing.
+    players = null;
     list.replaceChildren();
     status.textContent = "Loading players…";
     try {
@@ -127,7 +129,6 @@ function playerPicker(label, choose, otherSeats) {
       counts = new Map();
       for (const player of players) counts.set(player.name, (counts.get(player.name) || 0) + 1);
       render();
-      input.disabled = false;
     } catch {
       status.textContent = "Couldn’t load players. ";
       const retry = document.createElement("button");
@@ -146,7 +147,7 @@ function playerPicker(label, choose, otherSeats) {
   });
   panel.addEventListener("toggle", () => { if (panel.open) void browse(); });
   function refreshChoices() {
-    if (panel.open && !input.disabled) render();
+    if (panel.open) render();
   }
   return {panel, reset: () => select(null), refreshChoices};
 }

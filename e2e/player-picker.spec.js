@@ -62,6 +62,29 @@ test("browse beyond the first dozen, refine immediately and choose distinct oppo
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
 
+test("reopening a directory keeps text typed before its queued toggle fires", async ({page}) => {
+  await page.route("**/api/players", route => route.fulfill({
+    json:[{id:"a", name:"April"}, {id:"n", name:"Nicole"}],
+  }));
+  await page.request.post("/auth/login/begin", {data:{username:"scott"}});
+  await page.goto("/games/new");
+  const panel = page.locator(".player-picker").first();
+  await panel.getByRole("button", {name:"April", exact:true}).click();
+  // Reproduce input and opening in one task so the browser delivers toggle afterward.
+  await panel.evaluate(details => {
+    details.querySelector("summary").click();
+    const search = details.querySelector("input");
+    search.focus();
+    search.value = "Nic";
+    search.dispatchEvent(new Event("input", {bubbles:true}));
+    return new Promise(resolve => details.addEventListener("toggle", resolve, {once:true}));
+  });
+  await expect(panel.getByRole("button", {name:"Nicole", exact:true})).toBeVisible();
+  await expect(panel.getByRole("button")).toHaveCount(1);
+  await expect(panel.getByRole("searchbox")).toHaveValue("Nic");
+  await expect(panel.getByRole("searchbox")).toBeFocused();
+});
+
 test("existing game host gets an immediate roster and can select a recipient", async ({ page }) => {
   await page.request.post("/auth/login/begin", {data: {username: "shelli"}});
   const path = "/games/1756fa1c-f0b0-48d0-8304-8a79c4230ef6/invite";
