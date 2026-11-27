@@ -117,6 +117,12 @@ fn sample_word(id: &str) -> &'static str {
         "rift" => "RIFT",
         "serpent" => "FANG",
         "orrery" => "NOVA",
+        "moth" => "MOTH",
+        "junction" => "GRID",
+        "kraken" => "INK",
+        "fox" => "EYE",
+        "scarab" => "JADE",
+        "phoenix" => "ASH",
         _ => "ACE",
     }
 }
@@ -136,21 +142,36 @@ fn equipped(item: &Item, studio: &Studio) -> bool {
     item.id == studio.tile
 }
 
-fn unlock_text(item: &Item, s: &Studio) -> String {
-    if equipped(item, s) {
-        return "Equipped".into();
-    }
-    if s.owned.contains(item.id) {
-        return "Owned".into();
-    }
+fn achievement_rule(item: &Item, s: &Studio) -> Option<String> {
     match item.id {
-        "aurora" => return format!("{}/5 multiplayer finishes", s.human_finishes.min(5)),
-        "serpent" => return format!("Score 75 in a turn · Best {}", s.best_play),
-        "orrery" => return format!("Play on 14 days · {}/14", s.daily_words.min(14)),
-        "bingo" => return "Play all 7 tiles in one turn".into(),
-        _ => {}
+        "aurora" => Some(format!(
+            "Finish 5 multiplayer games · {}/5",
+            s.human_finishes.min(5)
+        )),
+        "serpent" => Some(format!("Score 75 in a turn · Best {}", s.best_play)),
+        "orrery" => Some(format!("Play on 14 days · {}/14", s.daily_words.min(14))),
+        "bingo" => Some(format!(
+            "Play all 7 tiles in one turn · {}/1",
+            usize::from(s.bingo)
+        )),
+        _ => s.achievement_rule(item.id),
     }
-    format!("{} coins", item.price)
+}
+
+fn unlock_text(item: &Item, s: &Studio) -> String {
+    let status = if equipped(item, s) {
+        Some("Equipped")
+    } else if s.owned.contains(item.id) {
+        Some("Owned")
+    } else {
+        None
+    };
+    match (status, achievement_rule(item, s)) {
+        (Some(status), Some(rule)) => format!(r#"<b class="finish-owned">{status}</b>{rule}"#),
+        (None, Some(rule)) => rule,
+        (Some(status), None) => status.to_owned(),
+        (None, None) => format!("{} coins", item.price),
+    }
 }
 
 fn card(item: &Item, s: &Studio, collection: bool) -> String {
@@ -213,20 +234,28 @@ fn board_preview(item: &Item) -> String {
 }
 
 fn detail(item: &Item, s: &Studio, collection: bool) -> String {
-    let return_url = if collection {
-        "/shop?tab=collection"
+    let (return_url, return_label) = if collection {
+        ("/shop?tab=collection", "My collection")
+    } else if item.trophy {
+        ("/shop#achievements", "Achievements")
     } else {
-        "/shop"
+        ("/shop", "Tile Shop")
     };
-    let category = item
-        .rarity
-        .map_or("Tile set".to_owned(), |rarity| format!("{rarity} tile set"));
+    let category = match (item.rarity, item.trophy) {
+        (Some(rarity), true) => format!("{rarity} achievement"),
+        (Some(rarity), false) => format!("{rarity} tile set"),
+        (None, true) => "Achievement".into(),
+        (None, false) => "Tile set".into(),
+    };
+    let rule = achievement_rule(item, s)
+        .map(|text| format!(r#"<p class="unlock-rule">{text}</p>"#))
+        .unwrap_or_default();
     let action = if equipped(item, s) {
         r#"<span class="equipped-label">✓ Equipped</span>"#.into()
     } else if s.owned.contains(item.id) {
         form("equip", item.id, collection, "Equip")
     } else if item.trophy {
-        format!(r#"<p class="unlock-rule">{}</p>"#, unlock_text(item, s))
+        String::new()
     } else if s.balance >= item.price {
         form(
             "buy",
@@ -242,33 +271,35 @@ fn detail(item: &Item, s: &Studio, collection: bool) -> String {
         )
     };
     format!(
-        r#"<a class="shop-return" href="{return_url}">‹ {return_label}</a><div class="finish-detail"><div class="finish-info"><small>{category}</small><h1>{name}</h1>{action}</div>{preview}</div>{earn}"#,
-        return_label = if collection {
-            "My collection"
-        } else {
-            "Tile Shop"
-        },
+        r#"<a class="shop-return" href="{return_url}">‹ {return_label}</a><div class="finish-detail"><div class="finish-info"><small>{category}</small><h1>{name}</h1>{rule}{action}</div>{preview}</div>{earn}"#,
         name = item.name,
         preview = board_preview(item),
-        earn = earn(s)
+        earn = if item.trophy { String::new() } else { earn(s) }
     )
 }
 
 fn inventory(s: &Studio, collection: bool) -> String {
     let mut out = String::new();
     if !collection {
-        let feature = find("rift").expect("featured finish in catalog");
-        write!(out, r#"<a class="shop-feature" href="{}"><div><small>Epic tile set</small><h2>{}</h2><span>Preview finish ›</span></div>{}</a>"#, detail_url(feature,false), feature.name, specimen(feature)).unwrap();
+        let feature = find("phoenix").expect("featured achievement in catalog");
+        write!(out, r##"<a class="shop-feature" href="#achievements"><div><small>Legendary achievement</small><h2>{}</h2><span>Explore achievements ›</span></div>{}</a>"##, feature.name, specimen(feature)).unwrap();
     }
     out.push_str(&earn(s));
-    for title in ["Rare finds", "Tile sets", "Achievements"] {
-        let list: String = cosmetics::catalog()
+    let catalog = cosmetics::catalog();
+    let trophies = catalog.iter().filter(|item| item.trophy).count();
+    let earned = catalog
+        .iter()
+        .filter(|item| item.trophy && s.owned.contains(item.id))
+        .count();
+    for title in ["Achievements", "Rare finds", "Tile sets"] {
+        let achievements = title == "Achievements";
+        let list: String = catalog
             .iter()
             .filter(|item| {
-                let shelf = if item.rarity.is_some() {
-                    "Rare finds"
-                } else if item.trophy {
+                let shelf = if item.trophy {
                     "Achievements"
+                } else if item.rarity.is_some() {
+                    "Rare finds"
                 } else {
                     "Tile sets"
                 };
@@ -276,9 +307,20 @@ fn inventory(s: &Studio, collection: bool) -> String {
             })
             .map(|i| card(i, s, collection))
             .collect();
-        if !list.is_empty() {
-            write!(out,r#"<section class="shop-shelf"><h2>{title}</h2><div class="shop-grid">{list}</div></section>"#).unwrap();
+        if list.is_empty() && !achievements {
+            continue;
         }
+        if achievements {
+            write!(out, r#"<section class="shop-shelf" id="achievements"><header class="shop-shelf-heading"><h2>{title}</h2><span>{earned} of {trophies} earned</span></header>"#).unwrap();
+        } else {
+            write!(out, r#"<section class="shop-shelf"><h2>{title}</h2>"#).unwrap();
+        }
+        if list.is_empty() {
+            out.push_str(r#"<a class="shop-subtle-link" href="/shop#achievements">Explore achievements ›</a>"#);
+        } else {
+            write!(out, r#"<div class="shop-grid">{list}</div>"#).unwrap();
+        }
+        out.push_str("</section>");
     }
     if collection {
         let (enabled, value, action) = if s.uniform_board {
@@ -331,6 +373,9 @@ fn render(s: &Studio, q: &Selection, error: Option<&str>) -> Result<String, AppE
             inventory(s, collection)
         )
     };
+    let body = format!(
+        r#"{body}<footer class="shop shop-credits"><a class="shop-subtle-link" href="/public/finishes/credits.html">Artwork credits</a></footer>"#
+    );
     let head = format!(
         r#"<link rel="stylesheet" href="{}">"#,
         asset("/public/shop.css")

@@ -102,7 +102,7 @@ body.game-page { overflow-y: auto; }
   border: 1px solid var(--cosmetic-tile-edge, var(--tile-edge));
 }
 .game-page .cell .tile-letter { font-size: clamp(.65rem, 3.9cqw, 1.45rem); font-weight: 500; }
-.game-page .cell .tile-points { font-size: clamp(.3rem, 1.45cqw, .6rem); }
+.game-page .cell .tile-points { bottom: 1px; font-size: clamp(.3rem, 1.45cqw, .6rem); }
 .game-page .rack-area { margin-top: .45rem; }
 .game-page .rack {
   --rack-slots: 7;

@@ -62,7 +62,7 @@
   --cosmetic-tile-detail: inset 0 0 0 1px #f8d58f49, inset 0 -2px #160c19;
 }
 [data-tile-style="koi"] {
-  --cosmetic-tile-face: url("finishes/koi-76f824702b.webp") center / cover no-repeat #12464a;
+  --cosmetic-tile-face: url("finishes/koi-ab1b2e5899.webp") center / cover no-repeat #12464a;
   --cosmetic-tile-edge: #81c5ad;
   --cosmetic-tile-ink: #fff4d9;
 }
@@ -82,7 +82,7 @@
   --cosmetic-tile-ink: #fff6e8;
 }
 [data-tile-style="serpent"] {
-  --cosmetic-tile-face: url("finishes/serpent-f889d1b9f0.webp") center / cover no-repeat #193d39;
+  --cosmetic-tile-face: url("finishes/serpent-f1748b1368.webp") center / cover no-repeat #193d39;
   --cosmetic-tile-edge: #95ae79;
   --cosmetic-tile-ink: #fff6d4;
 }
@@ -90,4 +90,34 @@
   --cosmetic-tile-face: url("finishes/orrery-ca8d7f7e8f.webp") center / cover no-repeat #192b44;
   --cosmetic-tile-edge: #b99e69;
   --cosmetic-tile-ink: #fff2cf;
+}
+[data-tile-style="moth"] {
+  --cosmetic-tile-face: url("finishes/moth-ca30415150.webp") center / cover no-repeat #30273d;
+  --cosmetic-tile-edge: #beaf8b;
+  --cosmetic-tile-ink: #fff3d7;
+}
+[data-tile-style="junction"] {
+  --cosmetic-tile-face: url("finishes/junction-904ffc5be5.webp") center / cover no-repeat #172942;
+  --cosmetic-tile-edge: #6bb5b7;
+  --cosmetic-tile-ink: #fff8e8;
+}
+[data-tile-style="kraken"] {
+  --cosmetic-tile-face: url("finishes/kraken-85779a9a52.webp") center / cover no-repeat #291634;
+  --cosmetic-tile-edge: #a1789a;
+  --cosmetic-tile-ink: #fff2dd;
+}
+[data-tile-style="fox"] {
+  --cosmetic-tile-face: url("finishes/fox-6b9162f161.webp") center / cover no-repeat #e3c7bb;
+  --cosmetic-tile-edge: #ad8878;
+  --cosmetic-tile-ink: #301c30;
+}
+[data-tile-style="scarab"] {
+  --cosmetic-tile-face: url("finishes/scarab-a57a4d350f.webp") center / cover no-repeat #ddba69;
+  --cosmetic-tile-edge: #b39855;
+  --cosmetic-tile-ink: #2e241f;
+}
+[data-tile-style="phoenix"] {
+  --cosmetic-tile-face: url("finishes/phoenix-b425c30093.webp") center / cover no-repeat #4c2232;
+  --cosmetic-tile-edge: #d48a63;
+  --cosmetic-tile-ink: #ffecd1;
 }

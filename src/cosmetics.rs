@@ -7,7 +7,7 @@ use uuid::Uuid;
 use crate::{
     app::AppState,
     error::AppError,
-    models::{Game, GameStatus, MoveKind, RACK_SIZE, SeatKind},
+    models::{Game, GameStatus, MoveKind, Placement, RACK_SIZE, SeatKind},
 };
 
 #[derive(Debug, Serialize)]
@@ -55,6 +55,12 @@ pub fn catalog() -> &'static [Item] {
         Item::tile("rift", "Event Horizon", 275, false).rarity("Epic"),
         Item::tile("serpent", "Dragon Scale", 0, true).rarity("Legendary"),
         Item::tile("orrery", "Celestial Atlas", 0, true).rarity("Legendary"),
+        Item::tile("moth", "Lantern Moth", 0, true).rarity("Rare"),
+        Item::tile("junction", "Neon Junction", 0, true).rarity("Epic"),
+        Item::tile("kraken", "Kraken Ink", 0, true).rarity("Epic"),
+        Item::tile("fox", "Mirror Fox", 0, true).rarity("Rare"),
+        Item::tile("scarab", "Scarab Relic", 0, true).rarity("Legendary"),
+        Item::tile("phoenix", "Ashborn Phoenix", 0, true).rarity("Legendary"),
     ];
     CATALOG
 }
@@ -124,11 +130,83 @@ pub fn finish_reward(game: &Game, viewer: Uuid) -> Option<u32> {
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(default)]
+struct WordAchievements {
+    played_blank: bool,
+    most_words: usize,
+    longest_word: usize,
+    palindrome: bool,
+    rare_letters: BTreeSet<char>,
+    bingo_games: BTreeSet<Uuid>,
+}
+
+impl WordAchievements {
+    fn credit(&mut self, game_id: Uuid, placements: &[Placement], words: &[String]) {
+        self.most_words = self.most_words.max(words.len());
+        for word in words {
+            // Formed words in the move log are English board letters.
+            self.longest_word = self.longest_word.max(word.len());
+            self.palindrome |= word.len() >= 3
+                && word
+                    .bytes()
+                    .zip(word.bytes().rev())
+                    .all(|(a, b)| a.eq_ignore_ascii_case(&b));
+        }
+        for placement in placements {
+            let letter = placement.letter.to_ascii_uppercase();
+            if placement.is_blank {
+                self.played_blank = true;
+            } else if matches!(letter, 'J' | 'Q' | 'X' | 'Z') {
+                self.rare_letters.insert(letter);
+            }
+        }
+        if placements.len() == RACK_SIZE {
+            self.bingo_games.insert(game_id);
+        }
+    }
+
+    fn merge(&mut self, other: Self) {
+        self.played_blank |= other.played_blank;
+        self.most_words = self.most_words.max(other.most_words);
+        self.longest_word = self.longest_word.max(other.longest_word);
+        self.palindrome |= other.palindrome;
+        self.rare_letters.extend(other.rare_letters);
+        self.bingo_games.extend(other.bingo_games);
+    }
+
+    // Both the shop's progress text and its equip authorization use the same thresholds.
+    fn requirement(&self, id: &str) -> Option<(&'static str, usize, usize)> {
+        Some(match id {
+            "moth" => ("Play a blank in a word", usize::from(self.played_blank), 1),
+            "junction" => ("Form 3 words in one turn", self.most_words, 3),
+            "kraken" => ("Form a word of 8 or more letters", self.longest_word, 8),
+            "fox" => (
+                "Form a palindrome of 3 or more letters",
+                usize::from(self.palindrome),
+                1,
+            ),
+            "scarab" => (
+                "Place J, Q, X and Z without blanks",
+                self.rare_letters.len(),
+                4,
+            ),
+            "phoenix" => (
+                "Play all 7 tiles in 3 different games",
+                self.bingo_games.len(),
+                3,
+            ),
+            _ => return None,
+        })
+    }
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(default)]
 struct Rewards {
     daily: BTreeSet<NaiveDate>,
     finishes: BTreeMap<Uuid, MatchReward>,
     bingo: bool,
     best_play: u32,
+    words: WordAchievements,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -181,6 +259,7 @@ impl Rewards {
                 if let Some(day) = mv.played_on {
                     self.daily.insert(day);
                 }
+                self.words.credit(game.id, placements, &mv.words);
                 self.bingo |= placements.len() == RACK_SIZE;
                 self.best_play = self.best_play.max(mv.points);
             }
@@ -197,6 +276,7 @@ impl Rewards {
         }
         self.bingo |= other.bingo;
         self.best_play = self.best_play.max(other.best_play);
+        self.words.merge(other.words);
     }
 }
 
@@ -236,7 +316,15 @@ impl Wallet {
         if daily_words >= 14 {
             owned.insert("orrery".into());
         }
+        for item in catalog() {
+            if let Some((_, count, target)) = self.rewards.words.requirement(item.id)
+                && count >= target
+            {
+                owned.insert(item.id.into());
+            }
+        }
         Studio {
+            words: self.rewards.words.clone(),
             best_play: self.rewards.best_play,
             balance,
             bingo: self.rewards.bingo,
@@ -287,6 +375,8 @@ impl Wallet {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Studio {
+    #[serde(skip)]
+    words: WordAchievements,
     pub balance: u32,
     pub best_play: u32,
     pub bingo: bool,
@@ -296,6 +386,13 @@ pub struct Studio {
     pub daily_words: usize,
     pub human_finishes: usize,
     pub bot_finishes: usize,
+}
+
+impl Studio {
+    pub fn achievement_rule(&self, id: &str) -> Option<String> {
+        let (rule, count, target) = self.words.requirement(id)?;
+        Some(format!("{rule} · {}/{target}", count.min(target)))
+    }
 }
 
 async fn reconcile(
@@ -339,7 +436,7 @@ mod tests {
     use crate::{
         dict::Dictionary,
         game::{GameOptions, SeatSpec, apply_move, new_game},
-        models::{Difficulty, Placement, Position, SCORELESS_LIMIT, Tile},
+        models::{Difficulty, Position, SCORELESS_LIMIT, Tile},
         users::UserStore,
     };
 
@@ -372,20 +469,34 @@ mod tests {
     }
 
     fn play_word(game: &mut Game, seat: usize, word: &str) {
+        play_at(game, seat, (7, 7), word, word);
+    }
+
+    // Lowercase denotes a blank represented by that letter.
+    fn play_at(game: &mut Game, seat: usize, (row, col): (usize, usize), tiles: &str, dict: &str) {
         game.turn = seat;
-        game.seats[seat].rack = word.chars().map(Tile::Letter).collect();
-        let placements = word
+        game.seats[seat].rack = tiles
+            .chars()
+            .map(|letter| {
+                if letter.is_ascii_lowercase() {
+                    Tile::Blank
+                } else {
+                    Tile::Letter(letter)
+                }
+            })
+            .collect();
+        let placements = tiles
             .chars()
             .enumerate()
             .map(|(offset, letter)| Placement {
-                position: Position::new(7, 7 + offset),
-                letter,
-                is_blank: false,
+                position: Position::new(row, col + offset),
+                letter: letter.to_ascii_uppercase(),
+                is_blank: letter.is_ascii_lowercase(),
             })
             .collect();
         apply_move(
             game,
-            &Dictionary::from_words(word),
+            &Dictionary::from_words(dict),
             seat,
             MoveKind::Play { placements },
             &mut rand::thread_rng(),
@@ -518,6 +629,202 @@ mod tests {
     }
 
     #[test]
+    fn achievement_rules_and_permissions_follow_committed_personal_moves() {
+        let player = Uuid::new_v4();
+        let mut wallet: Wallet = serde_json::from_str(r#"{"rewards":{"bingo":true}}"#).unwrap();
+        let items = [
+            ("moth", "Lantern Moth", "Rare", "0/1"),
+            ("junction", "Neon Junction", "Epic", "0/3"),
+            ("kraken", "Kraken Ink", "Epic", "0/8"),
+            ("fox", "Mirror Fox", "Rare", "0/1"),
+            ("scarab", "Scarab Relic", "Legendary", "0/4"),
+            ("phoenix", "Ashborn Phoenix", "Legendary", "0/3"),
+        ];
+        assert!(wallet.studio().achievement_rule("classic").is_none());
+        for (id, title, tier, zero) in items {
+            let item = catalog().iter().find(|item| item.id == id).unwrap();
+            assert_eq!(
+                (item.trophy, item.name, item.rarity),
+                (true, title, Some(tier))
+            );
+            assert!(
+                wallet
+                    .studio()
+                    .achievement_rule(id)
+                    .unwrap()
+                    .ends_with(zero)
+            );
+            assert!(wallet.apply("buy", id).is_err());
+            assert!(wallet.apply("equip", id).is_err());
+        }
+
+        let mut game = game_for(player, false);
+        play_at(&mut game, 1, (7, 7), "rACECAR", "RACECAR");
+        play_at(&mut game, 0, (7, 14), "S", "RACECARS");
+        let mut opponent = game.moves[0].clone();
+        opponent.seat = 0;
+        opponent.kind = MoveKind::Exchange {
+            tiles: vec![Tile::Blank],
+        };
+        game.moves.push(opponent);
+        game.moves[1].best = Some(crate::models::BestPlay {
+            words: vec!["LEVEL".into(); 3],
+            points: 100,
+        });
+        wallet.rewards.credit(player, &game);
+        let studio = wallet.studio();
+        assert!(studio.owned.contains("kraken"));
+        for id in ["moth", "fox", "junction", "phoenix"] {
+            assert!(!studio.owned.contains(id), "{id}");
+        }
+
+        let mut crossing = game_for(player, false);
+        play_word(&mut crossing, 0, "AT");
+        play_at(&mut crossing, 0, (8, 7), "TO", "TO\nAT");
+        assert_eq!(crossing.moves[1].words.len(), 3);
+        wallet.rewards.credit(player, &crossing);
+        let mut palindrome = game_for(player, true);
+        play_at(&mut palindrome, 0, (7, 7), "eVE", "EVE");
+        palindrome.moves[0].played_on = None;
+        wallet.rewards.credit(player, &palindrome);
+        for (id, achieved) in [
+            ("kraken", "8/8"),
+            ("moth", "1/1"),
+            ("fox", "1/1"),
+            ("junction", "3/3"),
+        ] {
+            wallet.apply("equip", id).unwrap();
+            assert!(wallet.apply("buy", id).is_err());
+            assert!(
+                wallet
+                    .studio()
+                    .achievement_rule(id)
+                    .unwrap()
+                    .ends_with(achieved)
+            );
+        }
+        assert!(!wallet.studio().owned.contains("phoenix"));
+    }
+
+    #[test]
+    fn word_achievement_boundaries_ignore_unplayed_tiles_and_recounted_games() {
+        let player = Uuid::new_v4();
+        let mut game = game_for(player, false);
+        play_word(&mut game, 0, "AA");
+        play_at(&mut game, 0, (8, 8), "TO", "TO\nAT");
+        assert_eq!(game.moves[1].words.len(), 2);
+        let mut wallet = Wallet::default();
+        wallet.rewards.credit(player, &game);
+        assert!(!wallet.studio().owned.contains("fox"));
+        assert!(!wallet.studio().owned.contains("junction"));
+        assert!(
+            wallet
+                .studio()
+                .achievement_rule("junction")
+                .unwrap()
+                .ends_with("2/3")
+        );
+
+        // A saved word can contain J or Z when somebody else supplied the actual tile.
+        let mut other = game_for(player, false);
+        play_word(&mut other, 1, "JAZZ");
+        play_at(&mut other, 0, (7, 11), "Y", "JAZZY");
+        wallet.rewards.credit(player, &other);
+        let mut rare = game_for(player, false);
+        play_at(&mut rare, 0, (7, 7), "JaZz", "JAZZ");
+        wallet.rewards.credit(player, &rare);
+        wallet.rewards.credit(player, &rare);
+        assert!(
+            wallet
+                .studio()
+                .achievement_rule("scarab")
+                .unwrap()
+                .ends_with("2/4")
+        );
+        let mut blanks = game_for(player, false);
+        play_at(&mut blanks, 0, (7, 7), "qI", "QI");
+        wallet.rewards.credit(player, &blanks);
+        let mut more = game_for(player, false);
+        play_word(&mut more, 0, "OX");
+        wallet.rewards.credit(player, &more);
+        assert!(
+            wallet
+                .studio()
+                .achievement_rule("scarab")
+                .unwrap()
+                .ends_with("3/4")
+        );
+        assert!(wallet.apply("equip", "scarab").is_err());
+        let mut last = game_for(player, false);
+        play_word(&mut last, 0, "QI");
+        wallet.rewards.credit(player, &last);
+        wallet.apply("equip", "scarab").unwrap();
+        assert!(wallet.apply("buy", "scarab").is_err());
+
+        // A legacy bingo flag alone cannot establish which games it came from.
+        let mut bingo = game_for(player, false);
+        play_word(&mut bingo, 0, "READING");
+        bingo.moves[0].played_on = None;
+        let mut snapshot = Rewards::default();
+        snapshot.credit(player, &bingo);
+        snapshot.credit(player, &bingo);
+        assert!(
+            wallet
+                .studio()
+                .achievement_rule("kraken")
+                .unwrap()
+                .ends_with("5/8")
+        );
+        wallet.rewards.merge(snapshot);
+        assert!(
+            wallet
+                .studio()
+                .achievement_rule("kraken")
+                .unwrap()
+                .ends_with("7/8")
+        );
+        assert!(!wallet.studio().owned.contains("kraken"));
+        assert!(
+            wallet
+                .studio()
+                .achievement_rule("phoenix")
+                .unwrap()
+                .ends_with("1/3")
+        );
+
+        bingo.id = Uuid::new_v4();
+        wallet.rewards.credit(player, &bingo);
+        assert!(wallet.apply("equip", "phoenix").is_err());
+        let saved = serde_json::to_string(&wallet).unwrap();
+        let mut recovered: Wallet = serde_json::from_str(&saved).unwrap();
+        let mut third = Rewards::default();
+        bingo.id = Uuid::new_v4();
+        third.credit(player, &bingo);
+        recovered.rewards.merge(third.clone());
+        recovered.rewards.merge(third);
+        recovered.rewards.merge(Rewards::default());
+        for id in ["scarab", "phoenix"] {
+            recovered.apply("equip", id).unwrap();
+            assert!(recovered.apply("buy", id).is_err());
+        }
+        assert!(
+            recovered
+                .studio()
+                .achievement_rule("phoenix")
+                .unwrap()
+                .ends_with("3/3")
+        );
+        assert!(
+            recovered
+                .studio()
+                .achievement_rule("scarab")
+                .unwrap()
+                .ends_with("4/4")
+        );
+        assert_eq!(recovered.studio().balance, wallet.studio().balance);
+    }
+
+    #[test]
     fn new_catalog_offers_have_stable_prices_rarities_and_equip_correctly() {
         let mut wallet = Wallet::default();
         for _ in 0..50 {
@@ -558,7 +865,7 @@ mod tests {
                 .iter()
                 .filter(|item| item.rarity.is_some())
                 .count(),
-            6
+            12
         );
     }
 
@@ -579,7 +886,7 @@ mod tests {
             serde_json::json!({"tile":"cherry","rack":"walnut","uniform_board":true});
         let previous_balance = 600 - 21 - 80 - 65 - 50 - 95;
         let mut migrated: Wallet = serde_json::from_value(saved).unwrap();
-        assert_eq!(catalog().len(), 18);
+        assert_eq!(catalog().len(), 24);
         for retired in [
             "maple", "walnut", "rosewood", "midnight", "torii", "reactor",
         ] {

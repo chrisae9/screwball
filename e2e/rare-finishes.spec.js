@@ -9,6 +9,37 @@ import {createInterface} from "node:readline";
 
 const tiles = [["koi",90],["circuit",125],["kintsugi",200],["rift",275],["serpent",0],["orrery",0]];
 
+const rules = {
+  moth: /blank/i,
+  junction: /3 words/i,
+  kraken: /8.?(?:letter|or more letters)/i,
+  fox: /palindrome/i,
+  scarab: /J.*Q.*X.*Z/i,
+  phoenix: /3 (?:different |distinct )?games/i,
+};
+const achievements = Object.keys(rules);
+
+function historicGame(template, opponent, turns) {
+  const game = structuredClone(template);
+  game.id = randomUUID();
+  game.seats[1].kind = {Human:{user_id:opponent.id}};
+  game.seats[1].name = opponent.display_name;
+  game.moves = [];
+  for (const {letters, row, col, blank, words, points} of turns) {
+    if (game.moves.length) game.moves.push({seat:1,kind:"Pass",words:[],points:0});
+    const placements = [...letters].map((letter, i) => {
+      const tile = {letter, is_blank:i === blank};
+      game.board.squares[row*15+col+i].tile = tile;
+      return {letter, is_blank:tile.is_blank, position:{row,col:col+i}};
+    });
+    // Original saves have no played_on date and no new achievement fields.
+    game.moves.push({seat:0,kind:{Play:{placements}},words,points});
+    game.seats[0].score += points;
+  }
+  game.turn = 1;
+  return game;
+}
+
 async function seed(dir) {
   const fixture = "e2e/fixture-data";
   const game = JSON.parse(await readFile(fixture + "/games/1756fa1c-f0b0-48d0-8304-8a79c4230ef6.json","utf8"));
@@ -17,28 +48,38 @@ async function seed(dir) {
   const finishes = Object.fromEntries(Array.from({length:42}, () => [randomUUID(),"human"]));
   const daily = Array.from({length:14}, (_,i) => "2025-06-" + String(i+1).padStart(2,"0"));
   user.settings = {cosmetics:{rewards:{finishes,daily,best_play:75}}};
+  const opponent = {...structuredClone(user), id:randomUUID(), username:"robin", display_name:"Robin"};
+  const archives = [
+    [{letters:"JAZZILY", row:7,col:4, blank:3,words:["JAZZILY"],points:100}],
+    [{letters:"EQUINOX", row:7,col:4, words:["EQUINOX"],points:96}],
+    [{letters:"EXAMPLE", row:7,col:4, words:["EXAMPLE"],points:86},
+      {letters:"S",       row:7,col:11,words:["EXAMPLES"],points:20}],
+    [{letters:"LEVEL", row:7,col:5,words:["LEVEL"],points:16}],
+    [{letters:"AT",row:7,col:7,words:["AT"],points:4},
+      {letters:"HO",row:8,col:7,words:["HO","AH","TO"],points:12}],
+  ].map(turns => historicGame(game, opponent, turns));
   const placements = [..."CAT"].map((letter, i) => {
     const tile = {letter, is_blank:letter === "A"};
     game.board.squares[7*15+6+i].tile = tile;
     return {letter, is_blank:tile.is_blank, position:{row:7,col:6+i}};
   });
   game.seats[0].score = 8;
-  game.seats[1].kind = {Human:{user_id:randomUUID()}};
+  game.seats[1].kind = {Human:{user_id:opponent.id}};
   game.seats[1].name = "Robin";
   game.moves = [{seat:0,kind:{Play:{placements}},words:["CAT"],points:8}, {seat:1,kind:"Pass",words:[],points:0}];
   await Promise.all(["games","users"].map(d=>mkdir(join(dir,d))));
-  await Promise.all([[game,"games"],[user,"users"]].map(([entity,folder]) =>
+  await Promise.all([[game,"games"],[user,"users"],[opponent,"users"],...archives.map(g=>[g,"games"])].map(([entity,folder]) =>
     writeFile(join(dir,folder,entity.id + ".json"), JSON.stringify(entity))));
-  return {game, user};
+  return {game, user, opponent};
 }
 
 const paint = item => item.first().evaluate(el => getComputedStyle(el).backgroundImage);
 
-test("paid and earned finishes equip on board letters, blanks, drafts and held tiles", async ({page}) => {
+test("shop credits legacy moves and equips earned finishes on letters, blanks and drafts", async ({page, browser}) => {
   const dir = await mkdtemp(join(tmpdir(), "scrabble-rare-"));
   let server, exited;
   try {
-    const {game, user} = await seed(dir);
+    const {game, user, opponent} = await seed(dir);
     server = spawn("./target/debug/screwball", [], {env:{...process.env, PORT:"0", PASSKEY_DISABLED:"1", DATA_PATH:dir},stdio:["ignore","pipe","inherit"]});
     exited = once(server,"exit");
     let base;
@@ -48,6 +89,35 @@ test("paid and earned finishes equip on board letters, blanks, drafts and held t
     }
     expect(base).toBeTruthy();
     expect((await page.request.post(base + "/auth/login/begin",{data:{username:user.username}})).ok()).toBe(true);
+
+    // Both players have the same ample coin balance and share the saved games.
+    // Only the player whose stored moves qualified may equip the challenge finishes.
+    const visitor = await browser.newContext({baseURL:base});
+    try {
+      expect((await visitor.request.post("/auth/login/begin",{data:{username:opponent.username}})).ok()).toBe(true);
+      const locked = await visitor.newPage();
+      await locked.goto("/shop?tab=collection");
+      await expect(locked.locator(".coin-balance")).toContainText("910 coins");
+      await Promise.all(achievements.map(async id => {
+        await expect(locked.locator('a.shop-card[href*="item=' + id + '"]')).toHaveCount(0);
+        for (const action of ["buy","equip"]) {
+          // eslint-disable-next-line no-await-in-loop
+          const result = await visitor.request.post("/shop",{form:{action,item:id},maxRedirects:0});
+          expect(result.status(), action + " locked " + id).toBe(422);
+        }
+      }));
+      await locked.goto("/shop?item=phoenix");
+      await expect(locked.locator(".unlock-rule")).toContainText(rules.phoenix);
+      await expect(locked.locator(".finish-info button")).toHaveCount(0);
+      await locked.goto("/shop");
+      await Promise.all(achievements.map(id =>
+        expect(locked.locator('a.shop-card[href*="item=' + id + '"]')).toContainText(rules[id])
+      ));
+    } finally { await visitor.close(); }
+    await page.goto(base + "/shop?tab=collection");
+    await Promise.all(achievements.map(id =>
+      expect(page.locator('a.shop-card[href*="item=' + id + '"]')).toContainText("Owned")
+    ));
 
     let balance = 910; // 42 completed multiplayer games plus 14 scoring dates.
     const paints = new Set();
@@ -70,7 +140,16 @@ test("paid and earned finishes equip on board letters, blanks, drafts and held t
       await expect(blank.locator(".tile-points")).toHaveText("0");
       await expect(blank.locator(".tile-letter")).toHaveCSS("text-decoration-line","underline");
       const finish = await paint(tile);
-      expect(finish).not.toBe("none");
+      const artLoads = await tile.first().evaluate(el => {
+        const layers = [...getComputedStyle(el).backgroundImage.matchAll(/url\("([^"]+)"\)/g)];
+        return Promise.all(layers.map(async ([, src]) => {
+          const image = new Image();
+          image.src = src;
+          await image.decode();
+          return image.naturalWidth > 0 && image.naturalHeight > 0;
+        }));
+      });
+      expect(artLoads, id + " artwork must load on the board").toContain(true);
       expect(await paint(key)).toBe(finish);
       paints.add(finish);
       await board.locator('[data-row="7"][data-col="9"]').click();
@@ -83,12 +162,12 @@ test("paid and earned finishes equip on board letters, blanks, drafts and held t
       expect(Math.abs(geometry.width - geometry.height)).toBeLessThan(.25);
       await page.getByRole("button",{name:"Clear",exact:true}).click();
     }
-    for (const item of tiles) {
+    for (const item of [...tiles, ...achievements.map(id => [id,0])]) {
       // Each selection spends this player's balance and changes the same board.
       // eslint-disable-next-line no-await-in-loop
       await checkTile(item);
     }
-    expect(paints.size).toBe(tiles.length);
+    expect(paints.size).toBe(tiles.length + achievements.length);
   } finally {
     if (server && server.exitCode === null && server.signalCode === null) server.kill();
     if (exited) await exited;

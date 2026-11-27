@@ -79,3 +79,11 @@
   .shop-card:has(.finish-rarity) .specimen { min-height: 4.4rem; }
   .shop-card:has(.finish-rarity) .sample-tile { --sample-side: clamp(1.45rem,7.1vw,2.55rem); }
 }
+
+#achievements { scroll-margin-top: 4rem; }
+.shop-shelf-heading { display: flex; align-items: baseline; justify-content: space-between; gap: .5rem; }
+.shop-shelf-heading span { color: var(--muted); font-size: .84rem; font-variant-numeric: tabular-nums; }
+.finish-info .unlock-rule + form, .finish-info .unlock-rule + .equipped-label { display: inline-block; margin-top: .8rem; }
+.shop-credits { margin-top: 1.5rem; border-top: 1px solid var(--line); }
+.shop-subtle-link { display: inline-flex; align-items: center; min-height: 44px; color: var(--muted); font-size: .85rem; text-underline-offset: .17em; }
+.finish-owned { display: block; color: var(--ink); font-weight: 650; }
