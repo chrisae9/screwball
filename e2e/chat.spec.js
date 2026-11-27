@@ -79,3 +79,25 @@ test("incoming invitations and reconnect notices leave the phone chat composer a
       && document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2) === button;
   })).toBe(true);
 });
+
+test("an unread chat and a capped activity count fit below the phone status edge", async ({page}) => {
+  await page.setViewportSize({width: 320, height: 693});
+  await page.request.post("/auth/login/begin", {data:{username:"shelli"}});
+  await page.route("**/api/invitations", route => route.fulfill({
+    contentType:"text/html", body:"",
+    headers:{"x-scrabble-other-turns":"12", "x-scrabble-chat-unread":"true"},
+  }));
+  await page.goto("/games/1756fa1c-f0b0-48d0-8304-8a79c4230ef6");
+  const chat = page.getByRole("link", {name:"Chat, unread messages"});
+  const bell = page.getByRole("link", {name:"View games waiting for your turn"});
+  await expect(chat).toBeVisible();
+  await expect(bell).toHaveAttribute("href", "/#my-games");
+  const count = bell.locator(".notice-count");
+  await expect(count).toHaveText("9+");
+  const badge = await count.boundingBox();
+  const target = await bell.boundingBox();
+  // The installed iPhone app paints a six-pixel strip above a flush toolbar.
+  expect(badge.y - target.y).toBeGreaterThanOrEqual(6);
+  expect(badge.x + badge.width).toBeLessThanOrEqual(target.x + target.width);
+  expect((await chat.boundingBox()).x + 44).toBeLessThanOrEqual(target.x);
+});

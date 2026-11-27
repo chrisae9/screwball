@@ -1976,8 +1976,9 @@ section.card + section.card {
   place-items: center; color: var(--ink); background: transparent; border: 0; border-radius: .6rem; cursor: pointer;
 }
 .nav-notice svg { width: 22px; height: 22px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.nav-notice:has(.notice-count) svg { transform: translate(-3px, 2px); }
 .notice-count {
-  position: absolute; top: 2px; right: 0; padding: 1px 4px; min-width: 15px; border-radius: 1rem;
+  position: absolute; top: 7px; right: 1px; padding: 1px 4px; min-width: 15px; border-radius: 1rem;
   font: 700 10px/14px system-ui, sans-serif; text-align: center; color: var(--on-accent); background: var(--accent);
 }
 .nav-notice:focus-visible, .nav-notice:hover { background: var(--bg); }
