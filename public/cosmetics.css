@@ -1,0 +1,79 @@
+/* A finish is painted inside the tile so it never changes board or rack geometry. */
+[data-tile-style="classic"] {
+  --cosmetic-tile-face: linear-gradient(160deg,#fff4d5,#efcf94);
+  --cosmetic-tile-edge: #ddbd83;
+  --cosmetic-tile-ink: #32291d;
+}
+[data-tile-style="cobalt"] {
+  --cosmetic-tile-face: linear-gradient(148deg, #ffffff32 0 7%, transparent 8% 60%, #06337877 61%), linear-gradient(165deg,#4389e7,#164dac 57%,#163a79);
+  --cosmetic-tile-edge: #659de4;
+  --cosmetic-tile-ink: #fff;
+}
+[data-tile-style="cherry"] {
+  --cosmetic-tile-face: linear-gradient(120deg, transparent 65%, #ffa4b122 66% 69%,transparent 70% 73%,#ffa4b133 74% 76%,transparent 77%), linear-gradient(155deg,#b92e4e,#872139 55%,#56182f);
+  --cosmetic-tile-edge: #f38a9a;
+  --cosmetic-tile-ink: #fff2e5;
+}
+[data-tile-style="lavender"] {
+  --cosmetic-tile-face: linear-gradient(32deg,#9279c266,transparent 48%), linear-gradient(126deg,#b7a8ee,#e6daff 42%,#c6b2e7 68%,#f5dfed);
+  --cosmetic-tile-edge: #9981bc;
+  --cosmetic-tile-ink: #34294d;
+}
+[data-tile-style="forest"] {
+  --cosmetic-tile-face: repeating-linear-gradient(115deg,transparent 0 6px,#d3ece009 6px 7px), linear-gradient(152deg,#376d64,#23524e 58%,#173b3b);
+  --cosmetic-tile-edge: #88b6a5;
+  --cosmetic-tile-ink: #ecf9de;
+}
+[data-tile-style="amber"] {
+  --cosmetic-tile-face: linear-gradient(44deg,#cd772b55 18%,transparent 19% 76%,#ffecb259 77%), linear-gradient(135deg,#e09b46,#ffe0a1 52%,#eaa145);
+  --cosmetic-tile-edge: #b28249;
+  --cosmetic-tile-ink: #422611;
+}
+[data-tile-style="slate"] {
+  --cosmetic-tile-face: repeating-linear-gradient(168deg,transparent 0 3px,#c8d9e711 4px,transparent 5px), linear-gradient(145deg,#546379,#303c50 63%,#263041);
+  --cosmetic-tile-edge: #8392a9;
+  --cosmetic-tile-ink: #f3f6ff;
+}
+[data-tile-style="glacier"] {
+  --cosmetic-tile-face: conic-gradient(from 40deg at 87% 20%,#fff9 0 57deg,transparent 58deg 245deg,#68b0c24d 246deg 300deg,transparent 301deg), conic-gradient(from 65deg at 14% 78%,transparent 0 152deg,#559cb959 153deg 218deg,#fff8 219deg 275deg,transparent 276deg),linear-gradient(145deg,#c8f8fc,#9fdcea 46%,#e9fffc);
+  --cosmetic-tile-edge: #69adbc;
+  --cosmetic-tile-ink: #10384a;
+}
+[data-tile-style="obsidian"] {
+  --cosmetic-tile-face: conic-gradient(from 15deg at 13% 80%,transparent 0 197deg,#667098 198deg 202deg,#38405a 203deg 256deg,transparent 257deg), linear-gradient(136deg,transparent 0 66%,#6b7492 66.5%,#333a50 68% 79%,#121620 80%),linear-gradient(145deg,#44495d,#171b27 42%,#141621);
+  --cosmetic-tile-edge: #8a90aa;
+  --cosmetic-tile-ink: #f8f7ff;
+  --cosmetic-tile-detail: inset 0 0 0 1px #ced7fa26, inset 0 -2px #0b0d16;
+}
+[data-tile-style="solar"] {
+  --cosmetic-tile-face: radial-gradient(ellipse at 112% -10%,#ffe078 0 18%,#ffad4c 19% 27%,#df6937 28% 35%,transparent 36%),radial-gradient(ellipse at -10% 115%,#faa250 0 18%,transparent 19%),linear-gradient(140deg,#8e354b,#682539 60%,#882741);
+  --cosmetic-tile-edge: #f5a15e;
+  --cosmetic-tile-ink: #fff9e4;
+}
+[data-tile-style="aurora"] {
+  --cosmetic-tile-face: linear-gradient(117deg,transparent 57%,#79f3cc40 61%,#5590c842 66%,transparent 72%),linear-gradient(160deg,#48978d 0%,#234d68 18%,#233255 58%,#715280 86%,#45978a);
+  --cosmetic-tile-edge: #77c6bc;
+  --cosmetic-tile-ink: #fff;
+}
+[data-tile-style="bingo"] {
+  --cosmetic-tile-face: linear-gradient(131deg,transparent 0 69%,#ffe49a 70% 71%,#ac8748 72% 73%,transparent 74%),linear-gradient(35deg,#543361 0 12%,#c69b59 13% 14%,transparent 15%),linear-gradient(150deg,#704b7b,#38243f 56%,#4f3055);
+  --cosmetic-tile-edge: #e2bd75;
+  --cosmetic-tile-ink: #fff1c9;
+  --cosmetic-tile-detail: inset 0 0 0 1px #f8d58f49, inset 0 -2px #160c19;
+}
+[data-rack-finish="maple"] {
+  --cosmetic-rack-face: repeating-linear-gradient(2deg,#c49962 0 1px,transparent 2px 9px),linear-gradient(#efcf9e,#c69c68);
+  --cosmetic-rack-edge: #936b42;
+}
+[data-rack-finish="walnut"] {
+  --cosmetic-rack-face: repeating-linear-gradient(4deg,transparent 0 3px,#bb8b682a 4px 5px,transparent 6px 11px),linear-gradient(#6e4839,#35251f);
+  --cosmetic-rack-edge: #94644c;
+}
+[data-rack-finish="midnight"] {
+  --cosmetic-rack-face: repeating-linear-gradient(135deg,transparent 0 3px,#59657e28 3px 4px),linear-gradient(#303847,#121720);
+  --cosmetic-rack-edge: #818b9d;
+}
+[data-rack-finish="rosewood"] {
+  --cosmetic-rack-face: repeating-linear-gradient(-3deg,transparent 0 3px,#cc8c713b 4px 5px,transparent 6px 11px),linear-gradient(#9b5351,#552e35);
+  --cosmetic-rack-edge: #aa6761;
+}

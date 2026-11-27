@@ -3,8 +3,7 @@ use serde::Serialize;
 use uuid::Uuid;
 
 use crate::models::{
-    BestPlay, Board, Difficulty, Game, GameStatus, Move, MoveKind, Premium, Seat, SeatKind, Square,
-    Tile,
+    BestPlay, Difficulty, Game, GameStatus, Move, MoveKind, Premium, Seat, SeatKind, Square, Tile,
 };
 
 pub fn effective_updated_at(game: &Game) -> DateTime<Utc> {
@@ -25,6 +24,11 @@ pub struct GameView {
     pub turn: usize,
     pub your_seat: Option<usize>,
     pub your_rack: Option<Vec<TileView>>,
+    pub your_tile_style: String,
+    pub rack_finish: String,
+    pub uniform_board: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub finish_reward: Option<u32>,
     pub seats: Vec<SeatView>,
     pub board: Vec<SquareView>,
     pub bag_count: usize,
@@ -74,6 +78,9 @@ pub struct TileView {
 
 #[derive(Serialize)]
 pub struct SquareView {
+    /// Omitted for Classic and for squares without a recorded owner.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tile_style: Option<String>,
     pub premium: &'static str,
     pub letter: Option<char>,
     pub is_blank: bool,
@@ -136,6 +143,11 @@ impl GameView {
         };
 
         let last_play = last_play_positions(game);
+        let uniform_board = names.uniform_board(viewer);
+        let your_tile_style = your_seat
+            .map(|index| names.tile_for_seat(&game.seats[index]))
+            .unwrap_or("classic")
+            .to_owned();
 
         Self {
             can_invite: crate::invitations::can_invite(game, viewer),
@@ -144,8 +156,12 @@ impl GameView {
             turn: game.turn,
             your_seat,
             your_rack,
+            your_tile_style,
+            rack_finish: names.rack_for_user(viewer).to_owned(),
+            uniform_board,
+            finish_reward: crate::cosmetics::finish_reward(game, viewer),
             seats,
-            board: board_view(&game.board),
+            board: board_view(game, names, uniform_board),
             bag_count: game.bag.len(),
             moves: game.moves.iter().map(move_view).collect(),
             winners: winners(game),
@@ -245,12 +261,38 @@ fn tile_view(tile: &Tile) -> TileView {
     }
 }
 
-fn board_view(board: &Board) -> Vec<SquareView> {
-    board.squares.iter().map(square_view).collect()
+fn board_view(game: &Game, names: &crate::users::PlayerNames, uniform: bool) -> Vec<SquareView> {
+    let mut squares: Vec<_> = game.board.squares.iter().map(square_view).collect();
+    if uniform {
+        return squares;
+    }
+    // A later Mimi Mode play can replace an earlier player's blank on the same square.
+    for mv in &game.moves {
+        let MoveKind::Play { placements } = &mv.kind else {
+            continue;
+        };
+        let style = game
+            .seats
+            .get(mv.seat)
+            .map(|seat| names.tile_for_seat(seat));
+        for placement in placements.iter().filter(|p| p.position.in_bounds()) {
+            if let Some(square) = squares.get_mut(placement.position.index()) {
+                square.tile_style = style
+                    .filter(|id| {
+                        *id != "classic"
+                            && square.letter == Some(placement.letter.to_ascii_uppercase())
+                            && square.is_blank == placement.is_blank
+                    })
+                    .map(str::to_owned);
+            }
+        }
+    }
+    squares
 }
 
 fn square_view(square: &Square) -> SquareView {
     SquareView {
+        tile_style: None,
         premium: premium_code(square.premium),
         letter: square.tile.map(|tile| tile.letter),
         is_blank: square.tile.is_some_and(|tile| tile.is_blank),

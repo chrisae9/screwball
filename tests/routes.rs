@@ -678,6 +678,68 @@ async fn jax_mode_no_longer_grants_unlimited_hints() {
 }
 
 #[tokio::test]
+async fn legacy_squares_stay_classic_and_reclaimed_blanks_change_owner() {
+    use screwball::models::{MoveKind, PlacedTile, Placement, Position};
+
+    let app = test_app().await;
+    let (host, host_cookie) = app.register("first", "First").await;
+    let (guest, guest_cookie) = app.register("second", "Second").await;
+    for (cookie, item) in [(&host_cookie, "cobalt"), (&guest_cookie, "cherry")] {
+        let form = format!("action=starter&item={item}");
+        let response = app
+            .router()
+            .oneshot(post_form("/shop", Some(cookie), &form))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    }
+
+    let mut game: Game = serde_json::from_str(include_str!(
+        "../e2e/fixture-data/games/13b7c864-5e32-4f40-b99e-b1b34171c832.json"
+    ))
+    .unwrap();
+    game.seats[0].kind = SeatKind::Human {
+        user_id: Some(host),
+    };
+    game.seats[1].kind = SeatKind::Human {
+        user_id: Some(guest),
+    };
+    let replaced = Position::new(0, 0);
+    let undocumented = Position::new(0, 1);
+    let letter = PlacedTile {
+        letter: 'A',
+        is_blank: false,
+    };
+    game.board.set_tile(replaced, letter);
+    game.board.set_tile(undocumented, letter);
+    let mut first = game.moves[0].clone();
+    first.seat = 0;
+    let place = Placement {
+        position: replaced,
+        letter: 'a',
+        is_blank: true,
+    };
+    first.kind = MoveKind::Play {
+        placements: vec![place],
+    };
+    let mut second = first.clone();
+    second.seat = 1;
+    second.kind = MoveKind::Play {
+        placements: vec![Placement {
+            is_blank: false,
+            ..place
+        }],
+    };
+    game.moves = vec![first, second];
+    let view = screwball::view::GameView::for_viewer(&game, host, &app.users.player_names().await);
+    assert_eq!(
+        view.board[replaced.index()].tile_style.as_deref(),
+        Some("cherry")
+    );
+    assert!(view.board[undocumented.index()].tile_style.is_none());
+}
+
+#[tokio::test]
 async fn game_page_escapes_script_in_embedded_state() {
     let app = test_app().await;
     // The seat name comes from the account display name, which here contains

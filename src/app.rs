@@ -45,6 +45,7 @@ impl FromRef<AppState> for Key {
 pub fn router(state: AppState) -> Router {
     let router = Router::new()
         .route("/", get(routes::index))
+        .route("/shop", get(crate::shop::page).post(crate::shop::update))
         .route("/history", get(routes::history))
         .route("/leaderboard", get(crate::leaderboard::page))
         .route("/debug/notifications", get(routes::notification_debug_page))
@@ -320,6 +321,8 @@ fn asset_version() -> String {
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     include_bytes!("render.rs").hash(&mut hasher);
     include_bytes!("render/lobby.rs").hash(&mut hasher);
+    include_bytes!("shop.rs").hash(&mut hasher);
+    include_bytes!("cosmetics.rs").hash(&mut hasher);
     for file in [
         "public/manifest.webmanifest",
         "public/apple-touch-icon.png",
@@ -329,6 +332,8 @@ fn asset_version() -> String {
         "public/app.css",
         "public/dark.css",
         "public/shell.css",
+        "public/cosmetics.css",
+        "public/shop.css",
         "public/lobby.css",
         "public/lobby.js",
         "public/board-theme.css",

@@ -22,7 +22,7 @@ fn asset_version() -> &'static str {
 }
 
 /// A `/public/...` URL with the current asset version appended for cache-busting.
-fn asset(path: &str) -> String {
+pub(crate) fn asset(path: &str) -> String {
     format!("{path}?v={}", asset_version_for(path))
 }
 
@@ -112,6 +112,11 @@ fn primary_menu(active: &str) -> String {
             "/leaderboard",
             "M7 3h10v5a5 5 0 0 1-10 0z M7 5H3v2a5 5 0 0 0 5 5 M17 5h4v2a5 5 0 0 1-5 5 M12 13v6 M8 21h8",
         ),
+        (
+            "Shop",
+            "/shop",
+            "M4 9h16l-1-5H5L4 9z M5 10v10h14V10 M9 20v-6h6v6 M3 9c0 4 5 4 6 0 0 4 6 4 6 0 1 4 6 4 6 0",
+        ),
     ] {
         let current = if active == label {
             r#" aria-current="page""#
@@ -136,6 +141,8 @@ fn layout_with_back(
         Some("History")
     } else if classes.contains(&"dashboard-page") {
         Some("Games")
+    } else if classes.contains(&"shop-page") {
+        Some("Shop")
     } else if classes.contains(&"leaderboard-page") {
         Some("Leaderboard")
     } else {
@@ -167,6 +174,7 @@ fn layout_with_back(
   <link rel="manifest" href="{manifest}">
   <link rel="stylesheet" href="{css}">
   <link rel="stylesheet" href="{shell_css}">
+  <link rel="stylesheet" href="{cosmetics_css}">
   <style>:root{{--player-atlas:url('{player_atlas}')}}</style>
   <link id="dark-palette" rel="stylesheet" href="{dark_css}" media="(prefers-color-scheme: dark)">
   <meta name="theme-color" content="#f5f6f8" media="(prefers-color-scheme: light)">
@@ -190,6 +198,7 @@ fn layout_with_back(
 </html>"##,
         title = escape(title),
         css = asset("/public/app.css"),
+        cosmetics_css = asset("/public/cosmetics.css"),
         shell_css = asset("/public/shell.css"),
         player_atlas = asset("/public/player-icons.png"),
         dark_css = asset("/public/dark.css"),
@@ -302,7 +311,7 @@ pub fn home_page(activity: Option<HomeActivity>) -> String {
 }
 
 /// The standalone create-game page linked from the home screen.
-pub fn new_game_page() -> String {
+pub fn new_game_page(open_seat: bool) -> String {
     layout(
         "New game — Scrabble",
         &format!(
@@ -310,7 +319,7 @@ pub fn new_game_page() -> String {
   <h1>New game</h1>
   {form}
 </section>"#,
-            form = new_game_form(),
+            form = new_game_form(open_seat),
         ),
     )
 }
@@ -620,18 +629,21 @@ fn signed_out_panel() -> String {
     body.to_string()
 }
 
-fn new_game_form() -> String {
-    let options = |selected_off: bool| {
-        let off = if selected_off { " selected" } else { "" };
+fn new_game_form(open_seat: bool) -> String {
+    let options = |selected: &str| {
+        let attr = |value: &str| if selected == value { " selected" } else { "" };
         format!(
             r#"<option value="off"{off}>— none —</option>
-<option value="invite">Invite a player…</option>
-<option value="open">Open seat (human)</option>
+<option value="invite"{invite}>Invite a player…</option>
+<option value="open"{open}>Open seat (human)</option>
 <option value="easy">Easy bot</option>
 <option value="chill">Chill bot</option>
 <option value="medium">Medium bot</option>
 <option value="hard">Hard bot</option>
-<option value="impossible">Impossible bot</option>"#
+<option value="impossible">Impossible bot</option>"#,
+            off = attr("off"),
+            invite = attr("invite"),
+            open = attr("open"),
         )
     };
     format!(
@@ -722,12 +734,9 @@ fn new_game_form() -> String {
   </details>
   <button type="submit" class="button">Create game</button>
 </form>"#,
-        seat2 = options(false).replace(
-            "<option value=\"invite\">Invite a player…</option>",
-            "<option value=\"invite\" selected>Invite a player…</option>"
-        ),
-        seat3 = options(true),
-        seat4 = options(true),
+        seat2 = options(if open_seat { "open" } else { "invite" }),
+        seat3 = options("off"),
+        seat4 = options("off"),
     )
 }
 
@@ -894,6 +903,12 @@ pub fn game_page(
         .collect();
     let log = render_move_log(view);
     let status_banner = render_status_banner(view);
+    let reward = view
+        .finish_reward
+        .map(|coins| {
+            format!(r#"<p class="finish-reward"><strong>+{coins} coins</strong> for finishing</p>"#)
+        })
+        .unwrap_or_default();
     let join = render_join_form(view);
     // Neutralize any "</..." sequence (e.g. a player name containing "</script>")
     // so embedded JSON can't break out of the surrounding <script> element.
@@ -952,6 +967,7 @@ pub fn game_page(
         <section class="board-panel"><h2>Player stats</h2>{scoreboard}</section>
       </aside>
     </div>
+    {reward}
     <noscript><p class="muted">Enable JavaScript to place tiles and play.</p></noscript>
   </div>
   <div id="game-island" data-game-id="{id}" data-auto-zoom="{auto_zoom}"></div>
@@ -1164,8 +1180,9 @@ fn render_board_squares(squares: &[SquareView], last_play: &[PositionView]) -> S
                 };
                 let points = crate::models::letter_points(letter);
                 let shown = if square.is_blank { 0 } else { points };
+                let style = escape(square.tile_style.as_deref().unwrap_or("classic"));
                 cells.push_str(&format!(
-                    r#"<div class="cell tile{blank}{last}" data-row="{row}" data-col="{col}"><span class="tile-letter">{letter}</span><span class="tile-points">{shown}</span></div>"#,
+                    r#"<div class="cell tile{blank}{last}" data-tile-style="{style}" data-row="{row}" data-col="{col}"><span class="tile-letter">{letter}</span><span class="tile-points">{shown}</span></div>"#,
                 ));
             }
             None => {
@@ -1201,6 +1218,7 @@ pub fn render_board(board: &Board) -> String {
         .squares
         .iter()
         .map(|square| SquareView {
+            tile_style: None,
             premium: premium_code(square.premium),
             letter: square.tile.map(|t| t.letter),
             is_blank: square.tile.is_some_and(|t| t.is_blank),

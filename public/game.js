@@ -87,6 +87,7 @@ function clearBoardDropGhost() {
     delete el.dataset.dropLetter;
     delete el.dataset.dropPoints;
     delete el.dataset.dropBlank;
+    if (!el.classList.contains("tile")) delete el.dataset.tileStyle;
   }
 }
 
@@ -94,6 +95,7 @@ function showBoardDropGhost(cell, preview = activeDragPreview) {
   clearBoardDropGhost();
   if (!cell || !preview) return;
   cell.classList.add("drag-over", "board-drop-ghost");
+  if (!cell.classList.contains("tile")) cell.dataset.tileStyle = cell.closest(".board")?.dataset.draftStyle || "classic";
   cell.dataset.dropLetter = preview.letter;
   cell.dataset.dropPoints = preview.points;
   cell.dataset.dropBlank = preview.isBlank ? "true" : "false";
@@ -233,6 +235,7 @@ function Tile({ letter, isBlank, points, pending, onClick }) {
 function Cell({
   square,
   pending,
+  draftStyle,
   row,
   col,
   cursor,
@@ -251,7 +254,7 @@ function Cell({
     ]
       .filter(Boolean)
       .join(" ");
-    return html`<div class=${cls} data-row=${row} data-col=${col}
+    return html`<div class=${cls} data-tile-style=${square.tile_style || "classic"} data-row=${row} data-col=${col}
       onDragOver=${onDragOver} onDragLeave=${onDragLeave} onDrop=${onDrop}
       onClick=${onClick}>
       <${Tile}
@@ -262,7 +265,7 @@ function Cell({
     </div>`;
   }
   if (pending) {
-    return html`<div class="cell tile pending-cell"
+    return html`<div class="cell tile pending-cell" data-tile-style=${draftStyle}
       data-row=${row}
       data-col=${col}
       data-rackid=${pending.rackId}
@@ -322,6 +325,7 @@ function Board({
   zoomControl,
   onZoomChange,
 }) {
+  const draftStyle = game.uniform_board ? "classic" : (game.your_tile_style || "classic");
   const byPos = new Map(pending.map((p) => [idx(p.row, p.col), p]));
   const boardRef = useRef(null);
   const pinchState = useRef(null);
@@ -483,6 +487,7 @@ function Board({
         pd.dragging = true;
         const ghost = document.createElement("div");
         ghost.className = "rack-tile-ghost";
+        ghost.dataset.tileStyle = draftStyle;
         ghost.textContent = pd.letter;
         positionDragGhost(ghost, touch.clientX, touch.clientY);
         document.body.appendChild(ghost);
@@ -698,6 +703,7 @@ function Board({
         html`<${Cell}
           key=${i}
           square=${game.board[i]}
+          draftStyle=${draftStyle}
           pending=${place}
           row=${row}
           col=${col}
@@ -727,7 +733,7 @@ function Board({
       );
     }
   }
-  return html`<div class="board" role="grid" ref=${boardRef}
+  return html`<div class="board" role="grid" data-draft-style=${draftStyle} ref=${boardRef}
     onDragOver=${(e) => {
       clearRackInsertionMarkers();
       if (!e.target.closest?.(".cell:not(.tile)")) clearBoardDropGhost();
@@ -832,6 +838,8 @@ function positionDragGhost(ghost, x, y) {
 }
 
 function Rack({
+  tileStyle,
+  rackFinish,
   tiles,
   selected,
   mode,
@@ -1054,6 +1062,7 @@ function Rack({
       const tile = tiles.find((t) => t.id === touchState.current.id);
       const ghost = document.createElement("div");
       ghost.className = "rack-tile-ghost";
+      ghost.dataset.tileStyle = tileStyle;
       ghost.textContent = tile ? (tile.is_blank ? " " : tile.letter) : "";
       positionDragGhost(ghost, touch.clientX, touch.clientY);
       document.body.appendChild(ghost);
@@ -1201,7 +1210,7 @@ function Rack({
     };
   });
 
-  return html`<div class="rack" ref=${rackRef}
+  return html`<div class="rack" data-rack-finish=${rackFinish} ref=${rackRef}
     onDragOver=${handleRackDragOver}
     onDragLeave=${handleRackDragLeave}
     onDrop=${handleRackDrop}
@@ -1223,6 +1232,8 @@ function Rack({
       return html`<button type="button"
         key=${tile.id}
         class=${cls}
+        data-tile-style=${tileStyle}
+        aria-label=${tile.is_blank ? "Blank tile, 0 points" : undefined}
         data-tile-id=${tile.id}
         draggable=${true}
         onDragStart=${(e) => {
@@ -1468,6 +1479,7 @@ function Results({ game }) {
         );
       }),
     ),
+    game.finish_reward ? html`<p class="finish-reward"><strong>+${game.finish_reward} coins</strong> for finishing</p>` : null,
     html`<a class="button" href="/games/new">New game</a>`,
   ]);
 }
@@ -2568,6 +2580,8 @@ function App({ gameId, initial, autoZoom }) {
     ? h("div", { class: "rack-area" }, [
         !finished
           ? html`<${Rack}
+              tileStyle=${game.your_tile_style || "classic"}
+              rackFinish=${game.rack_finish || "maple"}
               tiles=${rack}
               selected=${selected}
               mode=${mode}

@@ -202,6 +202,9 @@ pub struct BestPlay {
 /// A completed, scored move recorded in the game log.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Move {
+    /// UTC date of a newly accepted human word. Historical moves had no timestamps.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub played_on: Option<chrono::NaiveDate>,
     pub seat: usize,
     pub kind: MoveKind,
     pub words: Vec<String>,

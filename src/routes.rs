@@ -144,8 +144,16 @@ pub async fn healthcheck() -> &'static str {
     "OK"
 }
 
-pub async fn new_game_page(AuthUser(_user): AuthUser) -> Html<String> {
-    Html(render::new_game_page())
+#[derive(Deserialize)]
+pub struct NewGameQuery {
+    seat: Option<String>,
+}
+
+pub async fn new_game_page(
+    AuthUser(_user): AuthUser,
+    Query(query): Query<NewGameQuery>,
+) -> Html<String> {
+    Html(render::new_game_page(query.seat.as_deref() == Some("open")))
 }
 
 #[derive(Deserialize)]

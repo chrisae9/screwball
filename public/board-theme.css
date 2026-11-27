@@ -58,14 +58,48 @@ body.game-page { overflow-y: auto; }
 .game-page .premium-label { color: var(--premium-ink); font-weight: 750; }
 .game-page .cell.tile:not(.pending-cell),
 .game-page .rack-tile:not(.rack-slot, .rack-backspace-tile) {
-  background: var(--tile-grain);
-  color: var(--tile-ink);
-  border-color: var(--tile-edge);
-  box-shadow: inset 0 -1px #b39565;
+  background: var(--cosmetic-tile-face, var(--tile-grain));
+  color: var(--cosmetic-tile-ink, var(--tile-ink));
+  border-color: var(--cosmetic-tile-edge, var(--tile-edge));
+  box-shadow: var(--cosmetic-tile-detail, inset 0 -1px var(--cosmetic-tile-edge, #b39565));
 }
 .game-page .cell.tile.last-play:not(.pending-cell) {
   border-color: var(--last-edge);
   box-shadow: inset 0 -2px var(--last-edge);
+}
+.game-page .cell.tile.last-play:not([data-tile-style="classic"])::before {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: 23%;
+  right: 23%;
+  height: 2px;
+  background: var(--cosmetic-tile-ink);
+  pointer-events: none;
+}
+/* Blanks keep a dotted letter and drafts have a dashed inset at every zoom. */
+.game-page .cell.tile:not([data-tile-style="classic"]) .tile-blank .tile-letter,
+.game-page .cell.tile.tile-blank:not([data-tile-style="classic"]) .tile-letter {
+  color: inherit;
+  text-decoration: underline dotted;
+}
+.game-page .cell.tile.pending-cell:not([data-tile-style="classic"]) .tile-face {
+  background: var(--cosmetic-tile-face, var(--draft-tile));
+  color: var(--cosmetic-tile-ink, var(--draft-ink));
+  outline: 1px dashed currentColor;
+  outline-offset: -2px;
+}
+.game-page .cell.board-drop-ghost::before {
+  background: var(--cosmetic-tile-face, var(--tile));
+  border-color: var(--cosmetic-tile-edge, var(--tile-edge));
+}
+.game-page .cell.board-drop-ghost::before,
+.game-page .cell.board-drop-ghost::after { color: var(--cosmetic-tile-ink, var(--tile-ink)); }
+.game-page .cell.board-drop-ghost[data-drop-blank="true"]::before { text-decoration: underline dotted; }
+.game-page .rack-tile-ghost:not([data-tile-style="classic"]) {
+  background: var(--cosmetic-tile-face, var(--tile));
+  color: var(--cosmetic-tile-ink, var(--tile-ink));
+  border: 1px solid var(--cosmetic-tile-edge, var(--tile-edge));
 }
 .game-page .cell .tile-letter { font-size: clamp(.65rem, 3.9cqw, 1.45rem); font-weight: 500; }
 .game-page .cell .tile-points { font-size: clamp(.3rem, 1.45cqw, .6rem); }
@@ -81,9 +115,9 @@ body.game-page { overflow-y: auto; }
   gap: var(--rack-gap);
   padding: .4rem;
   border: 1px solid var(--line);
-  border-bottom: 3px solid var(--grid-line);
+  border-bottom: 3px solid var(--cosmetic-rack-edge, var(--grid-line));
   border-radius: 6px;
-  background: var(--surface);
+  background: var(--cosmetic-rack-face, var(--surface));
 }
 .game-page .rack .rack-tile {
   width: 100%;
@@ -176,6 +210,8 @@ body.game-page { overflow-y: auto; }
   cursor: pointer;
 }
 .game-page .board-zoom svg { width: 1.05rem; }
+.game-page .finish-reward { margin: .4rem 0; font-size: .9rem; color: var(--muted); }
+.game-page .finish-reward strong { color: var(--ink); }
 .game-page .move-summary { display: flex; align-items: baseline; justify-content: space-between; gap: .5rem; }
 .game-page .move-player { color: var(--muted); overflow-wrap: anywhere; }
 .game-page .move-points { flex: none; font-variant-numeric: tabular-nums; }

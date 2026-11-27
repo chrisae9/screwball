@@ -492,6 +492,11 @@ pub fn apply_move(
             refill_rack(&mut game.seats[seat_index].rack, &mut game.bag);
             game.seats[seat_index].score += scored.points as i32;
             Move {
+                played_on: matches!(
+                    game.seats[seat_index].kind,
+                    SeatKind::Human { user_id: Some(_) }
+                )
+                .then(|| Utc::now().date_naive()),
                 seat: seat_index,
                 kind: MoveKind::Play { placements },
                 words: scored.words.iter().map(|w| w.word.clone()).collect(),
@@ -521,6 +526,7 @@ pub fn apply_move(
             use rand::seq::SliceRandom;
             game.bag.shuffle(rng);
             Move {
+                played_on: None,
                 seat: seat_index,
                 kind: MoveKind::Exchange { tiles },
                 words: Vec::new(),
@@ -529,6 +535,7 @@ pub fn apply_move(
             }
         }
         MoveKind::Pass => Move {
+            played_on: None,
             seat: seat_index,
             kind: MoveKind::Pass,
             words: Vec::new(),
@@ -599,6 +606,7 @@ fn finish_game(game: &mut Game, went_out: Option<usize>) {
         }
         if delta != 0 {
             game.moves.push(Move {
+                played_on: None,
                 seat: index,
                 kind: MoveKind::EndAdjustment {
                     delta,

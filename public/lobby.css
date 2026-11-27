@@ -45,6 +45,10 @@
 #lobby-options select {width:100%;min-height:44px;font-size:15px;padding:5px;}
 .lobby-reset {min-height:44px;padding:4px 8px;border:0;color:var(--accent);font-weight:600;cursor:pointer;}
 .lobby-empty h2,.lobby #invitations h2 {font-size:17px;}
+.lobby-empty {padding:18px;}
+.lobby-empty h2 {margin:0;}
+.lobby-empty .lobby-button {display:inline-flex;max-width:100%;}
+.lobby-empty :is(.lobby-button,.lobby-reset):not([hidden]) {margin-top:10px;}
 @media(max-width:720px){
   .lobby-head{margin-bottom:14px}.lobby-tabs button{padding-inline:10px}.lobby-section{margin-top:16px}
   .lobby-row{padding:8px 10px;gap:9px}.lobby-row .player-avatar{width:35px;height:35px}

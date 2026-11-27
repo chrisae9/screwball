@@ -153,6 +153,7 @@ mod tests {
             seat.score = score;
         }
         game.moves.push(Move {
+            played_on: None,
             seat: 0,
             kind: MoveKind::Play { placements: vec![] },
             points: 4,

@@ -295,6 +295,11 @@ pub(super) fn page(activity: HomeActivity, view: LobbyView) -> String {
     } else {
         ""
     };
+    let empty_actions = if history {
+        ""
+    } else {
+        r#"<a class="lobby-button" data-empty-tab="open" href="/games/new?seat=open" hidden>Create an open game</a><a class="lobby-button" data-empty-tab="turn" href="/" hidden>View my games</a>"#
+    };
     let empty_msg = if history {
         "No finished games yet."
     } else {
@@ -314,7 +319,7 @@ pub(super) fn page(activity: HomeActivity, view: LobbyView) -> String {
 <div id="invitations" tabindex="-1"{inbox_hidden}>{invitations}</div>
 <div id="my-games" tabindex="-1" data-dashboard-version="{version}">{games}</div>
 <div id="open-games" hidden>{open}</div>
-<div class="lobby-empty"{empty_hidden}><h2>{empty_msg}</h2><button class="lobby-reset" type="button" hidden>Clear search and filters</button></div>
+<div class="lobby-empty"{empty_hidden}><h2>{empty_msg}</h2>{empty_actions}<button class="lobby-reset" type="button" hidden>Clear search and filters</button></div>
 <p class="match-sr" role="status" id="lobby-count"></p></div>"#,
         inbox_hidden = if history { " hidden" } else { "" },
         invitations = if history { "" } else { &activity.invitations },

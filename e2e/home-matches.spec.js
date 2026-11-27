@@ -31,7 +31,7 @@ async function seedHomeMatch(dir) {
   return "/games/" + game.id;
 }
 
-test("home cards show live scores and joinable seat counts without exposing reserved players", async ({browser}) => {
+async function withLobby(browser, testLobby) {
   const dir = await mkdtemp(join(tmpdir(), "scrabble-home-"));
   const contexts = [];
   let server;
@@ -56,6 +56,17 @@ test("home cards show live scores and joinable seat counts without exposing rese
       expect((await page.request.post("/auth/register/begin", {data:{username}})).ok()).toBe(true);
     }));
     await Promise.all([host,guest,spectator].map(page => page.goto("/")));
+    await testLobby({host, guest, spectator, board, baseURL});
+  } finally {
+    await Promise.all(contexts.map(context => context.close()));
+    if (server && server.exitCode === null && server.signalCode === null) server.kill();
+    if (exited) await exited;
+    await rm(dir, {recursive:true, force:true});
+  }
+}
+
+test("home cards show live scores and joinable seat counts without exposing reserved players", async ({browser}) => {
+  await withLobby(browser, async ({host, guest, spectator, board, baseURL}) => {
     await Promise.all([guest,spectator].map(page=>page.getByRole("button",{name:"Open games",exact:true}).click()));
     const openRow = page => page.locator(".open-match").filter({has:page.locator('a[href="'+board+'"]')});
     await expect(openRow(guest)).toContainText("2 open seats");
@@ -82,10 +93,36 @@ test("home cards show live scores and joinable seat counts without exposing rese
     await ownCard.click();
     await expect(host).toHaveURL(baseURL+board);
     await expect(host.locator('#game-island .board .cell.tile')).toHaveCount(2);
-  } finally {
-    await Promise.all(contexts.map(context => context.close()));
-    if (server && server.exitCode === null && server.signalCode === null) server.kill();
-    if (exited) await exited;
-    await rm(dir, {recursive:true, force:true});
-  }
+  });
+});
+
+test("empty lobby tabs offer relevant actions and create a game another player can join", async ({browser}) => {
+  await withLobby(browser, async ({host, spectator, baseURL}) => {
+    await spectator.getByRole("button", {name:"Your turn", exact:true}).click();
+    const empty = spectator.locator(".lobby-empty");
+    await expect(empty.getByRole("heading")).toHaveText("You’re all caught up.");
+    await expect(empty.getByRole("button")).toBeHidden();
+    await empty.getByRole("link", {name:"View my games"}).click();
+    await expect(spectator.getByRole("button", {name:"My games", exact:true})).toHaveAttribute("aria-pressed","true");
+    const openTab=host.getByRole("button",{name:"Open games",exact:true});
+    await openTab.click();
+    const noGames=host.locator(".lobby-empty");
+    await expect(noGames.getByRole("heading")).toHaveText("No open games.");
+    await expect(noGames.getByRole("button")).toBeHidden();
+    await host.getByRole("searchbox").fill("missing-player");
+    await noGames.getByRole("button",{name:"Clear search"}).click();
+    await expect(openTab).toHaveAttribute("aria-pressed","true");
+    await noGames.getByRole("link",{name:"Create an open game"}).click();
+    await expect(host.getByRole("combobox", {name:"Seat 2", exact:true})).toHaveValue("open");
+    await expect(host.getByRole("combobox", {name:"Seat 3", exact:true})).toHaveValue("off");
+    await expect(host.getByRole("button",{name:"Create game"})).toBeEnabled();
+    await host.getByRole("button",{name:"Create game"}).click();
+    await expect(host).toHaveURL(/\/games\/[0-9a-f-]+$/);
+    const created=new URL(host.url()).pathname;
+    await spectator.reload();
+    await spectator.getByRole("button",{name:"Open games",exact:true}).click();
+    const createdRow=spectator.locator(".open-match").filter({has:spectator.locator('a[href="'+created+'"]')});
+    await createdRow.getByRole("button",{name:"Join"}).click();
+    await expect(spectator).toHaveURL(baseURL+created);
+  });
 });

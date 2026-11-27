@@ -62,8 +62,15 @@ test("history filters real results, searches earlier words and sorts scores with
     await page.getByRole("searchbox").fill("nobody");
     await expect(page.getByRole("heading",{name:"No matching games"})).toBeVisible();
     await page.getByRole("button",{name:"Clear search and filters"}).click();
-    await expect(rows).toHaveText(["April","Easy bot","Riley"]);
-    await rows.last().click();
+    await expect(page.getByLabel("Sort by")).toHaveValue("closest");
+    await expect(rows).toHaveText(["Easy bot","Riley","April"]);
+    const lost=page.getByRole("button",{name:"Lost",exact:true});
+    await lost.click();
+    await page.getByRole("searchbox").fill("nobody");
+    await page.getByRole("button",{name:"Clear search",exact:true}).click();
+    await expect(lost).toHaveAttribute("aria-pressed","true");
+    await expect(rows).toHaveText(["Riley"]);
+    await rows.first().click();
     await expect(page).toHaveURL(/\/games\/[0-9a-f-]+$/);
   } finally {
     await context?.close();

@@ -1,0 +1,58 @@
+.shop { max-width: 56rem; margin-inline: auto; }
+.shop h1, .shop h2, .shop p, .shop figure { margin: 0; }
+.shop h1 { font-size: clamp(1.8rem, 5vw, 2.45rem); line-height: 1.06; letter-spacing: -.035em; }
+.shop h2 { font-size: 1.18rem; }
+.shop-heading, .classic-choice { display: flex; align-items: center; justify-content: space-between; gap: .75rem; }
+.coin-balance { display: inline-flex; align-items: center; gap: .4rem; font-weight: 650; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.coin { display: inline-grid; place-items: center; width: 1.25rem; aspect-ratio: 1; border-radius: 50%; color: #784b18; font-size: .66rem; background: linear-gradient(130deg,#fff0b8,#e7b557); border: 1px solid #bf8f46; box-shadow: inset 0 0 0 2px #fff2bd; }
+.shop-tabs { display: flex; gap: 1.25rem; margin: .75rem 0 1rem; border-bottom: 1px solid var(--line); }
+.shop-tabs a, .shop-return { display: inline-flex; align-items: center; min-height: 44px; color: var(--muted); text-decoration: none; font-weight: 650; }
+.shop-tabs [aria-current] { color: var(--ink); box-shadow: inset 0 -2px var(--accent); }
+.shop-feature { display: flex; justify-content: space-between; align-items: center; gap: .5rem; min-height: 8rem; padding: clamp(.8rem,3vw,1.6rem); border: 1px solid #465775; border-radius: 9px; background: linear-gradient(125deg,#162034,#1e304a 62%,#334962); color: #fff; text-decoration: none; }
+.shop-feature h2 { margin: .18rem 0 .5rem; font-size: clamp(1.35rem,4vw,2rem); line-height: 1.06; letter-spacing: -.03em; }
+.shop-feature small { color: #cddaf2; }
+.shop-feature .specimen { flex-shrink: 0; transform: rotate(-5deg); --sample-side: clamp(1.6rem,8.8vw,3.6rem); --sample-font: clamp(1rem,5vw,2rem); }
+.shop-shelf, .shop-earn, .classic-choice { margin-top: 1.5rem; }
+.shop-shelf h2 { margin-bottom: .6rem; }
+.shop-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: .65rem; }
+.shop-card { display: grid; grid-template-rows: 1fr auto auto; gap: .2rem; padding: .75rem; border-radius: 7px; border: 1px solid var(--line); background: var(--surface); color: inherit; text-decoration: none; }
+.shop-card:hover, .shop-card:focus-visible { border-color: var(--accent); }
+.shop-card .specimen { display: grid; place-items: center; min-height: 4.5rem; }
+.shop-card small, .shop-earn p, .classic-choice p, .finish-info > small, .unlock-rule span { color: var(--muted); }
+.shop-card strong { line-height: 1.15; }
+.sample-rack { display: inline-flex; align-items: center; justify-content: center; gap: 2px; background: var(--cosmetic-rack-face,transparent); }
+.sample-rack:not([data-rack-finish=""]) { padding: .3rem .25rem .35rem; border-bottom: 3px solid var(--cosmetic-rack-edge); border-radius: 4px; }
+.sample-tile { position: relative; flex: none; display: inline-grid; place-items: center; width: var(--sample-side,1.8rem); aspect-ratio: 1; box-sizing: border-box; border-radius: 3px; border: 1px solid var(--cosmetic-tile-edge); background: var(--cosmetic-tile-face); color: var(--cosmetic-tile-ink); box-shadow: var(--cosmetic-tile-detail,inset 0 1px #ffffff45,inset 0 -1px #0004); font: 650 var(--sample-font,1.04rem)/1 system-ui,sans-serif; }
+.sample-tile small { position: absolute; bottom: 6%; right: 5%; color: inherit; font-size: .42em; }
+.shop-earn, .classic-choice { padding: 1rem 0; border-top: 1px solid var(--line); }
+.shop-earn summary { cursor: pointer; font-weight: 650; padding-block: .3rem; }
+.shop-earn dl { max-width: 30rem; }
+.shop-earn dl > div { display: flex; gap: 1rem; justify-content: space-between; padding: .25rem 0; }
+.shop-earn dt small, .unlock-rule span { display: block; }
+.shop-earn dd { margin: 0; font-weight: 700; }
+.shop-buy { min-height: 44px; padding: .6rem .9rem; border: 0; border-radius: 6px; background: var(--accent); color: var(--on-accent); font: inherit; font-weight: 650; cursor: pointer; }
+.shop-feedback { padding: .65rem; border-inline-start: 3px solid var(--accent); }
+.detail-page > .coin-balance { float: right; min-height: 44px; }
+.detail-page .shop-feedback { clear: both; }
+.finish-detail { display: grid; grid-template-columns: 1fr 1.1fr; gap: 1.25rem; align-items: center; margin: .65rem 0; }
+.finish-info h1 { margin: .35rem 0 1rem; }
+.board-specimen { display: grid; justify-items: center; gap: .8rem; padding: clamp(1rem,5vw,2.4rem); border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+.mini-board { display: grid; grid-template-columns: repeat(5,minmax(0,1fr)); gap: 2px; width: min(100%,15rem); }
+.mini-board > * { width: 100%; aspect-ratio: 1; min-width: 0; }
+.mini-board .sample-tile { font-size: clamp(1rem,5vw,1.65rem); }
+.preview-cell { display: grid; place-items: center; color: var(--ink); background: color-mix(in srgb,var(--muted) 21%,var(--surface)); border-radius: 3px; font-weight: 650; font-size: .68rem; }
+.preview-cell.is-dl { background: #a2cdd7; color: #254651; }
+.preview-cell.is-dw { background: #dcada5; color: #57352f; }
+.mini-board .is-last { border-color: light-dark(#886d3a,#dec088); box-shadow: inset 0 -2px light-dark(#886d3a,#dec088); }
+.mini-board .is-last:not([data-tile-style="classic"])::before { content: ""; position: absolute; bottom: 0; left: 23%; right: 23%; height: 2px; background: currentColor; }
+.mini-board .is-draft { outline: 1px dashed currentColor; outline-offset: -4px; }
+.mini-board .is-draft[data-tile-style="classic"] { background: #c0dafa; color: #19304b; }
+.mini-board .is-blank { text-decoration: underline dotted; }
+.preview-rack { --sample-side: clamp(1.55rem,6vw,2.5rem); --sample-font: clamp(1rem,3.6vw,1.4rem); }
+@media (max-width: 719px) {
+  .shop-grid { grid-template-columns: repeat(2,minmax(0,1fr)); gap: .5rem; }
+  .shop-card { padding: .6rem; --sample-side: clamp(1.15rem,6.1vw,1.9rem); --sample-font: clamp(.77rem,3.8vw,1.1rem); }
+  .shop-card .specimen { min-height: 3.5rem; }
+  .finish-detail { grid-template-columns: 1fr; }
+  .classic-choice { flex-direction: column; align-items: start; }
+}

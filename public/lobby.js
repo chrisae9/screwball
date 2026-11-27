@@ -65,11 +65,17 @@ if (lobby) {
       count += shown;
     }
     empty.hidden = count > 0 || !inbox.hidden;
-    const filtered = !!query || !!filterCount || tab !== tabs[0].dataset.tab;
-    empty.querySelector("h2").textContent = query || filterCount ? "No matching games" :
+    const hasFilters = !!period || kind !== "all";
+    const filtered = !!query || hasFilters;
+    empty.querySelector("h2").textContent = filtered ? "No matching games" :
       tab === "turn" ? "You’re all caught up." : tab === "open" ? "No open games." :
       historyView ? (tab === "all" ? "No finished games yet." : "No matching games") : "No games yet.";
-    empty.querySelector("button").hidden = !filtered;
+    const reset = empty.querySelector(".lobby-reset");
+    reset.hidden = !filtered;
+    reset.textContent = query && hasFilters ? "Clear search and filters" : query ? "Clear search" : "Reset filters";
+    for (const link of empty.querySelectorAll("[data-empty-tab]")) {
+      link.hidden = filtered || link.dataset.emptyTab !== tab;
+    }
     lobby.querySelector("#lobby-count").textContent = count + (count === 1 ? " game" : " games");
   }
   input.addEventListener("input", render);
@@ -85,8 +91,7 @@ if (lobby) {
   options?.querySelector(".lobby-reset").addEventListener("click", () => { resetOptions(); render(); });
   empty.querySelector(".lobby-reset").addEventListener("click", () => {
     input.value = "";
-    tab = tabs[0].dataset.tab;
-    resetOptions();
+    for (const select of options?.querySelectorAll("select:not([name=sort])") || []) select.selectedIndex = 0;
     render();
     input.focus();
   });

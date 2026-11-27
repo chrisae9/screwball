@@ -31,6 +31,8 @@ pub struct User {
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct UserSettings {
+    #[serde(default, skip_serializing_if = "crate::cosmetics::Wallet::is_empty")]
+    pub cosmetics: crate::cosmetics::Wallet,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub player_handle: Option<String>,
     #[serde(default)]
@@ -116,6 +118,7 @@ pub fn normalize_username(raw: &str) -> String {
 pub struct PlayerNames {
     handles: Arc<HashMap<Uuid, String>>,
     avatars: Arc<HashMap<Uuid, u8>>,
+    equipment: Arc<HashMap<Uuid, crate::cosmetics::Equipment>>,
 }
 
 impl PlayerNames {
@@ -126,6 +129,39 @@ impl PlayerNames {
             .unwrap_or(fallback)
     }
 
+    pub fn tile_for_seat(&self, seat: &crate::models::Seat) -> &str {
+        match seat.kind {
+            crate::models::SeatKind::Human { user_id: Some(id) } => self.tile_for_user(id),
+            _ => "classic",
+        }
+    }
+
+    pub fn tile_for_user(&self, id: Uuid) -> &str {
+        self.equipment
+            .get(&id)
+            .map_or("classic", |equipment| equipment.tile())
+    }
+
+    pub fn rack_for_user(&self, id: Uuid) -> &str {
+        self.equipment
+            .get(&id)
+            .map_or("maple", |equipment| equipment.rack())
+    }
+
+    pub fn uniform_board(&self, id: Uuid) -> bool {
+        self.equipment
+            .get(&id)
+            .is_some_and(|equipment| equipment.uniform_board)
+    }
+
+    fn set_equipment(&mut self, id: Uuid, equipment: &crate::cosmetics::Equipment) {
+        let players = Arc::make_mut(&mut self.equipment);
+        if *equipment == Default::default() {
+            players.remove(&id);
+        } else {
+            players.insert(id, equipment.clone());
+        }
+    }
     pub fn avatar(&self, id: Uuid) -> u8 {
         self.avatars
             .get(&id)
@@ -236,6 +272,13 @@ impl UserStore {
         }
 
         let names = PlayerNames {
+            equipment: Arc::new(
+                by_id
+                    .values()
+                    .filter(|u| u.settings.cosmetics.equipment != Default::default())
+                    .map(|u| (u.id, u.settings.cosmetics.equipment.clone()))
+                    .collect(),
+            ),
             handles: Arc::new(
                 by_id
                     .values()
@@ -386,6 +429,11 @@ impl UserStore {
             return Err(AppError::conflict("that username is already taken"));
         }
         self.persist(&user).await?;
+        if user.settings.cosmetics.equipment != Default::default() {
+            guard
+                .names
+                .set_equipment(user.id, &user.settings.cosmetics.equipment);
+        }
         if let Some(handle) = &user.settings.player_handle {
             Arc::make_mut(&mut guard.names.handles).insert(user.id, format!("@{handle}"));
         }
@@ -397,6 +445,33 @@ impl UserStore {
         Ok(())
     }
 
+    /// Serialize balance checks and purchases alongside other account updates.
+    /// Reopening an unchanged studio performs no disk writes.
+    pub(crate) async fn edit_wallet<R>(
+        &self,
+        id: Uuid,
+        f: impl FnOnce(&mut crate::cosmetics::Wallet) -> Result<R, AppError>,
+    ) -> Result<R, AppError> {
+        let mut guard = self.index.lock().await;
+        let current = guard
+            .by_id
+            .get(&id)
+            .ok_or_else(|| AppError::not_found("Player not found"))?;
+        let mut working = current.clone();
+        let outcome = f(&mut working.settings.cosmetics)?;
+        if current.settings.cosmetics != working.settings.cosmetics {
+            let equipment_changed =
+                current.settings.cosmetics.equipment != working.settings.cosmetics.equipment;
+            self.persist(&working).await?;
+            if equipment_changed {
+                guard
+                    .names
+                    .set_equipment(id, &working.settings.cosmetics.equipment);
+            }
+            guard.by_id.insert(id, working);
+        }
+        Ok(outcome)
+    }
     /// Mutate a user under the registry lock, persisting before the change
     /// becomes visible in memory (mirrors `GameStore::update`). Keeps the
     /// username index consistent if the closure changes the username, and
