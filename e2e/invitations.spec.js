@@ -24,7 +24,7 @@ test("find a player, receive an invitation, and accept the reserved seat", async
     expect(new URL(inbox.url()).pathname).toBe(new URL(page.url()).pathname);
     await expect(inbox.locator(".rack .rack-tile")).toHaveCount(7);
     await inbox.getByRole("link",{name:"Back to games"}).click();
-    await expect(inbox.getByRole("heading",{name:"Your games"})).toBeVisible();
+    await expect(inbox.getByRole("heading",{name:"Games", exact:true})).toBeVisible();
     await expect(inbox.getByRole("button",{name:"Accept invitation"})).toHaveCount(0);
   } finally { await guest.close(); }
 });
@@ -71,7 +71,7 @@ test("a waiting host dashboard and recipient Settings update without navigation"
     await settings.getByRole("button", {name:"Accept invitation"}).click();
     await expect(row).toContainText(name);
     await expect(row).not.toContainText("(invited)");
-    const turn = row.locator("..").getByText("Your turn", {exact:true});
+    const turn = page.locator('[data-group="turn"] a[href="' + board + '"]');
     await expect(turn).toBeVisible();
     expect((await host.request.post(board + "/move", {data:{kind:"pass"}})).ok()).toBe(true);
     await expect(turn).toHaveCount(0);
@@ -85,7 +85,7 @@ test("phone returning online catches missed games even without an event stream",
   const username = "Resume " + randomUUID().slice(0, 8);
   await context.request.post("/auth/register/begin",{data:{username}});
   await page.goto("/");
-  await expect(page.locator("#my-games")).toContainText("No games yet");
+  await expect(page.locator(".lobby-empty")).toContainText("No games yet");
   // APIRequestContext keeps the server side of the test independent of the offline phone.
   await context.setOffline(true);
   const create = await context.request.post("/games",{form:{seat2:"easy"},maxRedirects:0});
@@ -116,4 +116,45 @@ test("granted device repairs server registration and offers a retry on failure",
   await page.getByRole("button",{name:"Enable notifications"}).click();
   await expect(page.locator("#notif-status")).toHaveText("Notifications are on.");
   expect(attempts).toBe(2);
+});
+
+test("the Games and History bell counts live activity, opens filtered destinations and respects Away", async ({page, browser, baseURL}) => {
+  const host = await browser.newContext({baseURL});
+  try {
+    const guest = "Bell " + randomUUID().slice(0,8);
+    const sender = "Inviter " + randomUUID().slice(0,8);
+    await Promise.all([[page.request,guest],[host.request,sender]].map(([api,username])=>
+      api.post("/auth/register/begin", {data:{username}})));
+    const match = await page.request.post("/games", {form:{seat2:"easy"},maxRedirects:0});
+    const mine = match.headers().location;
+    await page.goto("/");
+    const turnBell = page.getByRole("link",{name:"View games waiting for your turn"});
+    await expect(turnBell).toHaveText("1");
+    await page.getByRole("button",{name:"Open games",exact:true}).click();
+    await page.getByRole("searchbox").fill("_unmatched_");
+    await turnBell.click();
+    await expect(page.getByRole("button",{name:"Your turn",exact:true})).toHaveAttribute("aria-pressed","true");
+    await expect(page.getByRole("searchbox")).toBeEmpty();
+    await expect(page.locator('#my-games a[href="'+mine+'"]')).toBeVisible();
+    const [recipient] = await (await host.request.get("/api/players",{params:{q:guest}})).json();
+    const sent = await host.request.post("/games",{form:{seat2:"invite:"+recipient.id},maxRedirects:0});
+    expect(sent.status()).toBe(303);
+    await page.goto("/history");
+    const inviteBell = page.getByRole("link",{name:"View game invitations"});
+    await expect(inviteBell).toHaveText("2");
+    await inviteBell.click();
+    await expect(page.getByRole("button",{name:"Accept invitation"})).toBeVisible();
+    // The exact same hash must work again after the player switches filters.
+    await page.getByRole("button",{name:"Open games",exact:true}).click();
+    await page.getByRole("searchbox").fill("_absent_");
+    await inviteBell.click();
+    await expect(page.getByRole("searchbox")).toBeEmpty();
+    await expect(page.getByRole("button",{name:"Accept invitation"})).toBeVisible();
+    await page.request.post("/settings/away",{form:{hours:"indefinite"},maxRedirects:0});
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await expect(inviteBell).toHaveCount(0);
+    await page.goto("/history");
+    await expect(page.getByRole("heading",{name:"History",exact:true})).toBeVisible();
+    await expect(inviteBell).toHaveCount(0);
+  } finally { await host.close(); }
 });

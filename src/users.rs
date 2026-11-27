@@ -113,11 +113,40 @@ pub fn normalize_username(raw: &str) -> String {
 
 /// A cheap snapshot of public names, independent of sign-in and saved games.
 #[derive(Clone, Default)]
-pub struct PlayerNames(Arc<HashMap<Uuid, String>>);
+pub struct PlayerNames {
+    handles: Arc<HashMap<Uuid, String>>,
+    avatars: Arc<HashMap<Uuid, u8>>,
+}
 
 impl PlayerNames {
     pub fn name<'a>(&'a self, id: Uuid, fallback: &'a str) -> &'a str {
-        self.0.get(&id).map(String::as_str).unwrap_or(fallback)
+        self.handles
+            .get(&id)
+            .map(String::as_str)
+            .unwrap_or(fallback)
+    }
+
+    pub fn avatar(&self, id: Uuid) -> u8 {
+        self.avatars
+            .get(&id)
+            .copied()
+            .unwrap_or((id.as_u128() % u128::from(crate::avatars::COUNT)) as u8)
+    }
+
+    pub fn avatar_for_seat(&self, seat: &crate::models::Seat) -> u8 {
+        match seat.kind {
+            crate::models::SeatKind::Bot { .. } => 41, // Chess pawn
+            crate::models::SeatKind::Human { user_id } => self.avatar(
+                user_id
+                    .or_else(|| {
+                        seat.invitation
+                            .as_ref()
+                            .filter(|invite| !invite.declined)
+                            .map(|invite| invite.player)
+                    })
+                    .unwrap_or(seat.id),
+            ),
+        }
     }
 
     pub fn seat<'a>(&'a self, seat: &'a crate::models::Seat) -> Cow<'a, str> {
@@ -127,7 +156,7 @@ impl PlayerNames {
         }
         if let Some(invite) = &seat.invitation
             && !invite.declined
-            && let Some(handle) = self.0.get(&invite.player)
+            && let Some(handle) = self.handles.get(&invite.player)
         {
             return Cow::Owned(format!("{handle} (invited)"));
         }
@@ -206,17 +235,26 @@ impl UserStore {
             }
         }
 
-        let names = PlayerNames(Arc::new(
-            by_id
-                .values()
-                .filter_map(|u| {
-                    u.settings
-                        .player_handle
-                        .as_ref()
-                        .map(|handle| (u.id, format!("@{handle}")))
-                })
-                .collect(),
-        ));
+        let names = PlayerNames {
+            handles: Arc::new(
+                by_id
+                    .values()
+                    .filter_map(|u| {
+                        u.settings
+                            .player_handle
+                            .as_ref()
+                            .map(|handle| (u.id, format!("@{handle}")))
+                    })
+                    .collect(),
+            ),
+            avatars: Arc::new(
+                by_id
+                    .values()
+                    .filter(|u| u.settings.avatar_id.is_some())
+                    .map(|u| (u.id, u.settings.avatar(u.id)))
+                    .collect(),
+            ),
+        };
         Ok(Self {
             index: Mutex::new(Index {
                 by_id,
@@ -348,6 +386,12 @@ impl UserStore {
             return Err(AppError::conflict("that username is already taken"));
         }
         self.persist(&user).await?;
+        if let Some(handle) = &user.settings.player_handle {
+            Arc::make_mut(&mut guard.names.handles).insert(user.id, format!("@{handle}"));
+        }
+        if user.settings.avatar_id.is_some() {
+            Arc::make_mut(&mut guard.names.avatars).insert(user.id, user.settings.avatar(user.id));
+        }
         guard.by_username.insert(key, user.id);
         guard.by_id.insert(user.id, user);
         Ok(())
@@ -366,6 +410,7 @@ impl UserStore {
             .clone();
         let old_key = normalize_username(&working.username);
         let old_handle = working.settings.player_handle.clone();
+        let old_avatar = working.settings.avatar_id;
         let outcome = f(&mut working);
         let new_key = normalize_username(&working.username);
         if new_key != old_key
@@ -389,8 +434,16 @@ impl UserStore {
             ));
         }
         self.persist(&working).await?;
+        if working.settings.avatar_id != old_avatar {
+            let avatars = Arc::make_mut(&mut guard.names.avatars);
+            if working.settings.avatar_id.is_some() {
+                avatars.insert(id, working.settings.avatar(id));
+            } else {
+                avatars.remove(&id);
+            }
+        }
         if handle_changed {
-            let names = Arc::make_mut(&mut guard.names.0);
+            let names = Arc::make_mut(&mut guard.names.handles);
             if let Some(handle) = &working.settings.player_handle {
                 names.insert(id, format!("@{handle}"));
             } else {

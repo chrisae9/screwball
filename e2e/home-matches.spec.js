@@ -56,12 +56,14 @@ test("home cards show live scores and joinable seat counts without exposing rese
       expect((await page.request.post("/auth/register/begin", {data:{username}})).ok()).toBe(true);
     }));
     await Promise.all([host,guest,spectator].map(page => page.goto("/")));
+    await Promise.all([guest,spectator].map(page=>page.getByRole("button",{name:"Open games",exact:true}).click()));
     const openRow = page => page.locator(".open-match").filter({has:page.locator('a[href="'+board+'"]')});
     await expect(openRow(guest)).toContainText("2 open seats");
     await expect(openRow(guest)).not.toContainText("Reserved player");
     await openRow(guest).getByRole("link").click();
     await expect(guest).toHaveURL(baseURL+board);
     await guest.getByRole("link",{name:"Back to games"}).click();
+    await guest.getByRole("button",{name:"Open games",exact:true}).click();
     await openRow(guest).getByRole("button",{name:"Join"}).click();
     await expect(guest).toHaveURL(baseURL+board);
     await expect(openRow(spectator)).toContainText("1 open seat",{timeout:12000});
@@ -69,14 +71,14 @@ test("home cards show live scores and joinable seat counts without exposing rese
     await expect(openRow(spectator)).not.toContainText("Reserved player");
 
     const ownCard = host.locator('#my-games a[href="'+board+'"]');
-    const ownScore = ownCard.locator(".match-player").filter({hasText:"You"}).locator(".match-score");
-    await expect(ownScore).toHaveText("0 points");
+    const ownScore = ownCard.locator(".lobby-scores strong");
+    await expect(ownScore).toHaveText("0");
     const move = await host.request.post(board+"/move", {data:{kind:"play",placements:[
       {row:7,col:7,letter:"A"}, {row:7,col:8,letter:"T"},
     ]}});
     expect(move.ok()).toBe(true);
-    await expect(ownScore).toHaveText("4 points",{timeout:12000});
-    await expect(ownCard.locator(".match-status")).toHaveText("Visitor’s turn");
+    await expect(ownScore).toHaveText("4",{timeout:12000});
+    await expect(host.locator('[data-group="waiting"] a[href="'+board+'"]')).toContainText("You played AT +4");
     await ownCard.click();
     await expect(host).toHaveURL(baseURL+board);
     await expect(host.locator('#game-island .board .cell.tile')).toHaveCount(2);

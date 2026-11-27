@@ -207,7 +207,7 @@ setupInstallGuide(document.querySelector("#install-guide"));
 
 const inbox = document.querySelector("#invitations");
 const dashboardVersion = document.getElementById("my-games")?.dataset.dashboardVersion;
-if (inbox || document.querySelector(".back-link")) {
+if (inbox || document.querySelector(".back-link, .primary-menu")) {
   const alertLink = document.createElement("a");
   const nav = document.querySelector(".nav-links");
   const board = location.pathname.match(/^\/games\/([a-f0-9-]{36})(?:\/|$)/i)?.[1];
@@ -268,7 +268,8 @@ if (inbox || document.querySelector(".back-link")) {
     try {
       const response = await fetch(inbox ? "/api/activity" : "/api/invitations", {
         cache: "no-store", signal: controller.signal,
-        headers: dashboardVersion ? {"x-scrabble-dashboard": dashboardVersion} : board ? {"x-scrabble-current-game": board} : {},
+        headers: dashboardVersion ? {"x-scrabble-dashboard": dashboardVersion,
+          ...(document.body.classList.contains("history-page") ? {"x-scrabble-history":"1"} : {})} : board ? {"x-scrabble-current-game": board} : {},
       });
       if (response.status === 401) {
         failures = 2;
@@ -294,6 +295,9 @@ if (inbox || document.querySelector(".back-link")) {
         replace("invitations", activity.invitations);
         replace("my-games", activity.games);
         replace("open-games", activity.open_games);
+        inbox.closest(".lobby")?.dispatchEvent(new Event("lobbyrefresh"));
+        if (activity.away) alertLink.remove();
+        else showNotice(inbox.querySelectorAll(".invite-row").length, Number(activity.turns) || 0);
       } else {
         const html = await response.text();
         const chat = document.querySelector(".game-chat-link");

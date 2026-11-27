@@ -297,10 +297,10 @@ async fn home_page_logged_in_links_to_new_game_page() {
     assert!(html.contains(r#"<span class="brand-tile">C<small>3</small></span>"#));
     assert!(html.contains("New game"));
     assert!(html.contains("href=\"/games/new\""));
-    assert!(html.contains("Sign out"));
+    assert!(html.contains(r#"href="/history""#));
     assert!(html.contains("href=\"/settings\""));
     assert!(!html.contains("class=\"form new-game-form\""));
-    assert!(!html.contains("Open games"));
+    assert!(html.contains(r#"data-tab="open""#));
     assert!(!html.contains("href=\"/demo\""));
     assert!(!html.contains("Demo board"));
 }
@@ -396,16 +396,14 @@ async fn home_page_lists_joinable_open_games_separately() {
     assert_eq!(response.status(), StatusCode::OK);
     let html = body_string(response).await;
 
-    assert!(html.contains("<h1>Open games</h1>"));
-    assert!(html.contains("<strong>Host</strong> <span>1 open seat</span>"));
+    assert!(html.contains("Open to join"));
+    assert!(html.contains("Host</span><span class=\"lobby-meta\">1 open seat</span>"));
     assert!(html.contains(&format!(r#"action="/games/{joinable_id}/join""#)));
-    assert!(
-        html.contains(r#"<button type="submit" class="button button-secondary">Join</button>"#)
-    );
+    assert!(html.contains(r#"<button class="lobby-button">Join</button>"#));
     assert!(!html.contains("Finished host vs Open seat"));
 
-    let your_games = html.find("<h1>Your games</h1>").unwrap();
-    let open_games = html.find("<h1>Open games</h1>").unwrap();
+    let your_games = html.find("<h1>Games</h1>").unwrap();
+    let open_games = html.find("Open to join").unwrap();
     assert!(your_games < open_games);
 }
 
@@ -553,20 +551,22 @@ async fn home_page_badges_only_games_waiting_on_you_and_separates_finished() {
     assert_eq!(response.status(), StatusCode::OK);
     let html = body_string(response).await;
 
-    assert_eq!(
-        html.matches("match-status your-turn\">Your turn").count(),
-        1
-    );
-    assert!(!html.contains(">you</span>"));
-    assert!(html.contains("<details class=\"finished-games\""));
-    assert!(
-        html.contains("<summary class=\"game-list-divider\"><span>Finished games</span></summary>")
-    );
-    assert!(html.contains("Final score"));
+    assert!(html.contains(r#"data-group="turn""#));
+    assert!(html.contains(r#"data-group="waiting""#));
+    assert!(html.contains("Medium bot"));
+    assert!(!html.contains("Chill bot"));
 
-    let divider = html.find("Finished games").unwrap();
-    let finished_game = html.find("Chill bot").unwrap();
-    assert!(divider < finished_game);
+    let response = app
+        .router()
+        .oneshot(get("/history", Some(&cookie)))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let history = body_string(response).await;
+    assert!(history.contains("Finished games"));
+    assert!(history.contains("Chill bot"));
+    assert!(history.contains(r#"data-result="Ended""#));
+    assert!(!history.contains("Medium bot"));
 }
 
 #[tokio::test]

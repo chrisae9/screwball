@@ -60,7 +60,7 @@ test("live match updates keep keyboard focus on the same game", async ({page}) =
   await page.goto("/");
   const games = page.locator("#my-games");
   await expect(games.locator('[data-update="0"]')).toBeAttached();
-  const card = games.locator(".match-card").first();
+  const card = games.locator(".lobby-row").first();
   await card.focus();
   update++;
   await page.evaluate(() => window.dispatchEvent(new Event("focus")));

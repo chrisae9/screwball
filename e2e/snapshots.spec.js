@@ -28,7 +28,7 @@ test("home page, signed out", async ({ page }) => {
 test("home page, signed in", async ({ page }) => {
   await signIn(page, "scott");
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: "Open games" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Games", exact: true })).toBeVisible();
   await expect(page).toHaveScreenshot("home-signed-in.png", { fullPage: true });
 });
 

@@ -1,3 +1,5 @@
+mod lobby;
+pub use lobby::{LobbyView, history_page, lobby_activity};
 use std::sync::OnceLock;
 
 use chrono::{DateTime, Utc};
@@ -56,7 +58,7 @@ pub fn layout(title: &str, body: &str) -> String {
     layout_with_head(title, body, "", "", "")
 }
 
-fn layout_with_head(
+pub(crate) fn layout_with_head(
     title: &str,
     body: &str,
     head_extra: &str,
@@ -92,6 +94,35 @@ fn home_wordmark() -> String {
     )
 }
 
+fn primary_menu(active: &str) -> String {
+    let mut links = String::new();
+    for (label, href, path) in [
+        (
+            "Games",
+            "/",
+            "M3 3h7v7H3z M14 3h7v7h-7z M3 14h7v7H3z M14 14h7v7h-7z",
+        ),
+        (
+            "History",
+            "/history",
+            "M3 5v5h5 M4 9a9 9 0 1 1 0 7 M12 7v6l4 2",
+        ),
+        (
+            "Leaderboard",
+            "/leaderboard",
+            "M7 3h10v5a5 5 0 0 1-10 0z M7 5H3v2a5 5 0 0 0 5 5 M17 5h4v2a5 5 0 0 1-5 5 M12 13v6 M8 21h8",
+        ),
+    ] {
+        let current = if active == label {
+            r#" aria-current="page""#
+        } else {
+            ""
+        };
+        links.push_str(&format!(r#"<a href="{href}"{current}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="{path}"/></svg>{label}</a>"#));
+    }
+    format!(r#"<nav class="primary-menu" aria-label="Main navigation">{links}</nav>"#)
+}
+
 fn layout_with_back(
     title: &str,
     body: &str,
@@ -100,6 +131,27 @@ fn layout_with_back(
     nav_actions: &str,
     parent: BackTarget,
 ) -> String {
+    let classes: Vec<_> = body_class.split_ascii_whitespace().collect();
+    let active = if classes.contains(&"history-page") {
+        Some("History")
+    } else if classes.contains(&"dashboard-page") {
+        Some("Games")
+    } else if classes.contains(&"leaderboard-page") {
+        Some("Leaderboard")
+    } else {
+        None
+    };
+    let menu = active.map(primary_menu).unwrap_or_default();
+    let settings_link = if active.is_some() {
+        r#"<a class="settings-shortcut" href="/settings" aria-label="Settings"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 3-.6 2.3-2 .9-2.2-.7-2 3.4 1.7 1.6v2.8l-1.7 1.6 2 3.4 2.2-.6 2 .9.6 2.4h4l.6-2.4 2-.9 2.2.6 2-3.4-1.7-1.6v-2.8l1.7-1.6-2-3.4-2.2.7-2-.9L14 3z"/><circle cx="12" cy="12" r="3"/></svg></a>"#
+    } else {
+        ""
+    };
+    let game_brand = if classes.contains(&"game-page") || classes.contains(&"chat-page") {
+        format!(r#"<div class="game-wordmark">{}</div>"#, home_wordmark())
+    } else {
+        String::new()
+    };
     format!(
         r##"<!doctype html>
 <html lang="en">
@@ -114,10 +166,11 @@ fn layout_with_back(
   <link rel="apple-touch-icon" sizes="180x180" href="{touch_icon}">
   <link rel="manifest" href="{manifest}">
   <link rel="stylesheet" href="{css}">
+  <link rel="stylesheet" href="{shell_css}">
   <style>:root{{--player-atlas:url('{player_atlas}')}}</style>
   <link id="dark-palette" rel="stylesheet" href="{dark_css}" media="(prefers-color-scheme: dark)">
-  <meta name="theme-color" content="#f4f1ea" media="(prefers-color-scheme: light)">
-  <meta name="theme-color" content="#11130f" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#f7f4ed" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#171613" media="(prefers-color-scheme: dark)">
   <script src="{theme_js}"></script>
   <script type="module" src="{presence_js}"></script>
   <script type="module" src="{players_js}"></script>
@@ -126,9 +179,10 @@ fn layout_with_back(
 <body class="{body_class}">
   <div class="status-bar-edge" aria-hidden="true"></div>
   <nav class="nav">
-  {back}
-  <div class="nav-links">{nav_actions}</div>
+  {back}{game_brand}
+  <div class="nav-links">{nav_actions}{settings_link}</div>
 </nav>
+  {menu}
   <main class="page">
   {body}
   </main>
@@ -136,6 +190,7 @@ fn layout_with_back(
 </html>"##,
         title = escape(title),
         css = asset("/public/app.css"),
+        shell_css = asset("/public/shell.css"),
         player_atlas = asset("/public/player-icons.png"),
         dark_css = asset("/public/dark.css"),
         theme_js = asset("/public/theme.js"),
@@ -148,7 +203,7 @@ fn layout_with_back(
             )
         } else if matches!(parent, BackTarget::Settings) {
             r#"<a class="back-link" href="/settings" aria-label="Back to settings"><span aria-hidden="true">‹</span> Settings</a>"#.to_string()
-        } else if title == "Scrabble" {
+        } else if active.is_some() || title == "Scrabble" {
             home_wordmark()
         } else {
             r#"<a class="back-link" href="/" aria-label="Back to games"><span aria-hidden="true">‹</span> Back</a>"#.to_string()
@@ -179,6 +234,7 @@ pub fn error_page(title: &str, message: &str) -> String {
 pub struct HomeActivity {
     pub version: &'static str,
     pub away: bool,
+    pub turns: usize,
     pub invitations: String,
     pub open_games: String,
     pub games: String,
@@ -218,6 +274,10 @@ pub fn home_activity(
     };
     HomeActivity {
         version: asset_version(),
+        turns: games
+            .iter()
+            .filter(|game| is_current_turn(game, current))
+            .count(),
         away,
         games: list,
         open_games,
@@ -225,16 +285,10 @@ pub fn home_activity(
     }
 }
 
-pub fn home_page(activity: Option<HomeActivity>, profile: Option<&crate::users::User>) -> String {
-    let Some(HomeActivity {
-        version,
-        away,
-        invitations,
-        open_games,
-        games: list,
-    }) = activity
-    else {
-        return layout_with_head(
+pub fn home_page(activity: Option<HomeActivity>) -> String {
+    match activity {
+        Some(activity) => lobby::page(activity, LobbyView::Games),
+        None => layout_with_head(
             "Scrabble",
             &signed_out_panel(),
             &format!(
@@ -243,52 +297,8 @@ pub fn home_page(activity: Option<HomeActivity>, profile: Option<&crate::users::
             ),
             "",
             "",
-        );
-    };
-    let greeting = profile
-        .map(|u| {
-            format!(
-                "{} <span>Signed in as <strong>{}</strong></span>",
-                crate::avatars::image(u.settings.avatar(u.id)),
-                u.settings
-                    .player_handle
-                    .as_deref()
-                    .map(|h| format!("@{}", escape(h)))
-                    .unwrap_or_else(|| escape(&u.display_name))
-            )
-        })
-        .unwrap_or_else(|| "Signed in".to_string());
-    layout_with_head(
-        "Scrabble",
-        &format!(
-            r#"<section class="card account">
-  <p class="muted profile-greeting">{greeting}</p>
-  <a class="button new-game-link" href="/games/new">New game</a>
-  <a class="button button-secondary" href="/leaderboard">Leaderboard</a>
-  <a class="button button-secondary" href="/settings">Settings</a>
-  <form method="post" action="/auth/logout">
-    <button type="submit" class="button button-secondary">Sign out</button>
-  </form>
-</section>
-<section class="card" id="invitations" aria-live="polite">{invitations}</section>
-<details id="install-guide" class="card" hidden><summary>Install Scrabble on your phone</summary><ol></ol></details>
-<aside class="card notification-controls" id="phone-alerts" data-away="{away}" hidden>
-  <strong>Phone alerts</strong><p class="muted" id="notif-status" role="status"></p>
-  <button type="button" id="notif-enable" class="button" hidden>Enable notifications</button>
-</aside>
-<section class="card match-section">
-  <h1>Your games</h1>
-  <div id="my-games" data-dashboard-version="{version}">{list}</div>
-</section>
-<section class="card match-section" id="open-games">{open_games}</section>"#
         ),
-        &format!(
-            r#"<script type="module" src="{}"></script>"#,
-            asset("/public/settings.js")
-        ),
-        "dashboard-page",
-        "",
-    )
+    }
 }
 
 /// The standalone create-game page linked from the home screen.
@@ -386,6 +396,7 @@ pub fn settings_page(
         &format!(
             r#"<section class="card">
   <h1>Settings</h1>
+  <p class="account-name">Signed in as <strong>{display_name}</strong></p>
   <details id="player-username" class="username-picker"{opened}>
     <summary><span>Scrabble username<small>{summary}</small></span><span class="avatar-change">Edit</span></summary>
     <form method="post" action="/settings/username#player-username" class="form">
@@ -440,7 +451,9 @@ pub fn settings_page(
     <a class="button button-secondary" href="/debug/notifications">Notification diagnostics</a>
     <a class="button button-secondary" href="/debug/touch">Touch diagnostics</a>
   </div>
-</details>"#,
+</details>
+<form method="post" action="/auth/logout" class="account-signout"><button class="button button-secondary">Sign out</button></form>"#,
+            display_name = escape(&profile.display_name),
             icon_chooser = crate::avatars::chooser(avatar),
             checked = if settings.auto_zoom { " checked" } else { "" },
         ),
@@ -865,6 +878,19 @@ pub fn game_page(
 ) -> String {
     let board = render_board_squares(&view.board, &view.last_play);
     let scoreboard = render_scoreboard(view);
+    let scores: String = view
+        .seats
+        .iter()
+        .map(|seat| {
+            let avatar = seat.avatar_id.map(crate::avatars::image).unwrap_or_else(|| {
+                let symbol = if seat.kind == "bot" { "✦" } else { "+" };
+                format!(r#"<span class="seat-symbol" aria-hidden="true">{symbol}</span>"#)
+            });
+            let name = escape(&seat.name);
+            let score = seat.score;
+            format!(r#"<div class="header-score">{avatar}<span class="header-score-name">{name}</span><strong class="header-score-value">{score}</strong></div>"#)
+        })
+        .collect();
     let log = render_move_log(view);
     let status_banner = render_status_banner(view);
     let join = render_join_form(view);
@@ -873,7 +899,8 @@ pub fn game_page(
     let initial_json = initial_json.replace("</", "<\\/");
     let initial_json = initial_json.as_str();
     let head = format!(
-        r#"<script type="module" src="{}" defer></script>"#,
+        r#"<link rel="stylesheet" href="{}"><script type="module" src="{}" defer></script>"#,
+        asset("/public/board-theme.css"),
         asset("/public/game.js")
     );
     let head = head.as_str();
@@ -913,15 +940,15 @@ pub fn game_page(
         r#"{sign_in}
 <section class="card">
   <div id="ssr-fallback">
-    {status_banner}
     <div class="game-layout">
-      <div class="board-wrap">
-        {board}
-        {join}
+      <section class="board-summary" aria-label="Scores"><h2>Scores</h2><div class="header-scores">{scores}</div></section>
+      <div class="play-column">
+        <div class="board-caption">{status_banner}<span class="board-bag">Tiles in bag: {bag}</span></div>
+        <div class="board-wrap">{board}</div>{join}
       </div>
       <aside class="sidebar">
-        {scoreboard}
-        {log}
+        <section class="board-panel"><h2>Moves</h2>{log}</section>
+        <section class="board-panel"><h2>Player stats</h2>{scoreboard}</section>
       </aside>
     </div>
     <noscript><p class="muted">Enable JavaScript to place tiles and play.</p></noscript>
@@ -932,6 +959,7 @@ pub fn game_page(
   <script id="grandpa-two-letter-words" type="application/json">{grandpa_two_letter_json}</script>
 </section>"#,
         id = view.id,
+        bag = view.bag_count,
     );
     // Raw names: `layout_with_head` escapes the title itself.
     let names: Vec<String> = view.seats.iter().map(|seat| seat.name.clone()).collect();
@@ -1065,9 +1093,7 @@ fn render_scoreboard(view: &GameView) -> String {
         r#"<table class="scoreboard">
   <thead><tr><th>Player</th><th>Type</th><th>Score</th><th title="Points per play">Pts/Play</th></tr></thead>
   <tbody>{rows}</tbody>
-</table>
-<p class="muted">Tiles in bag: {bag}</p>"#,
-        bag = view.bag_count,
+</table>"#,
     )
 }
 

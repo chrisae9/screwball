@@ -37,12 +37,16 @@ fn viewer_id(user: Option<Uuid>) -> Uuid {
 
 pub async fn index(State(state): State<AppState>, MaybeUser(user): MaybeUser) -> Html<String> {
     let Some(user) = user else {
-        return Html(render::home_page(None, None));
+        return Html(render::home_page(None));
     };
-    let profile = state.users.get(user).await;
-    Html(render::home_page(
-        Some(dashboard(&state, user).await),
-        profile.as_ref(),
+    Html(render::home_page(Some(
+        dashboard(&state, user, Some(render::LobbyView::Games)).await,
+    )))
+}
+
+pub async fn history(State(state): State<AppState>, AuthUser(user): AuthUser) -> Html<String> {
+    Html(render::history_page(
+        dashboard(&state, user, Some(render::LobbyView::History)).await,
     ))
 }
 
@@ -51,14 +55,25 @@ pub async fn activity(
     ApiAuthUser(user): ApiAuthUser,
     headers: axum::http::HeaderMap,
 ) -> Json<render::HomeActivity> {
-    let mut activity = dashboard(&state, user).await;
+    let view = headers.contains_key("x-scrabble-dashboard").then(|| {
+        if headers.contains_key("x-scrabble-history") {
+            render::LobbyView::History
+        } else {
+            render::LobbyView::Games
+        }
+    });
+    let mut activity = dashboard(&state, user, view).await;
     if !headers.contains_key("x-scrabble-dashboard") {
         activity.include_dashboard_styles();
     }
     Json(activity)
 }
 
-async fn dashboard(state: &AppState, user: Uuid) -> render::HomeActivity {
+async fn dashboard(
+    state: &AppState,
+    user: Uuid,
+    view: Option<render::LobbyView>,
+) -> render::HomeActivity {
     let games = state.store.snapshots();
     let mine: Vec<&Game> = games
         .iter()
@@ -73,18 +88,18 @@ async fn dashboard(state: &AppState, user: Uuid) -> render::HomeActivity {
         .map(AsRef::as_ref)
         .collect();
     let names = state.users.player_names().await;
-    render::home_activity(
-        &mine,
-        &joinable,
-        user,
-        &names,
-        crate::invitations::inbox_html(games.iter().map(AsRef::as_ref), user, &names),
-        state
-            .users
-            .get(user)
-            .await
-            .is_some_and(|u| u.settings.away_state(chrono::Utc::now()).is_active()),
-    )
+    let away = state
+        .users
+        .get(user)
+        .await
+        .is_some_and(|u| u.settings.away_state(chrono::Utc::now()).is_active());
+    let invitations = crate::invitations::inbox_html(games.iter().map(AsRef::as_ref), user, &names);
+    if let Some(view) = view {
+        render::lobby_activity(view, &mine, &joinable, user, &names, invitations, away)
+    } else {
+        // The original installed dashboard expects its old fragment structure.
+        render::home_activity(&mine, &joinable, user, &names, invitations, away)
+    }
 }
 
 /// Signal a refresh only for activity involving this viewer. Clients fetch current state on

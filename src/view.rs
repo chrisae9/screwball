@@ -51,6 +51,7 @@ pub struct PositionView {
 pub struct SeatView {
     pub index: usize,
     pub name: String,
+    pub avatar_id: Option<u8>,
     pub kind: &'static str,
     pub difficulty: Option<Difficulty>,
     pub score: i32,
@@ -107,6 +108,7 @@ impl GameView {
             .map(|(index, seat)| SeatView {
                 index,
                 name: names.seat(seat).into_owned(),
+                avatar_id: seat_user(seat).map(|_| names.avatar_for_seat(seat)),
                 kind: match seat.kind {
                     SeatKind::Bot { .. } => "bot",
                     SeatKind::Human { .. } => "human",

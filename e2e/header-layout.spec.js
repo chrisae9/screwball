@@ -2,13 +2,13 @@ import {expect, test} from "@playwright/test";
 import {randomUUID} from "node:crypto";
 
 function headerLayout(header) {
-  const strip = header.querySelector(".header-scores");
+  const strip = document.querySelector("#game-island .header-scores");
   const area = strip.getBoundingClientRect();
   const targets = [...header.querySelectorAll("a")].map(link => link.getBoundingClientRect());
-  const values = [...header.querySelectorAll(".header-score-value")].map(value => value.getBoundingClientRect());
+  const values = [...strip.querySelectorAll(".header-score-value")].map(value => value.getBoundingClientRect());
   return {
     actions: header.querySelectorAll(".nav-links > :is(a, button)").length,
-    scoreAndBackShareRow: area.top < header.querySelector(".back-link").getBoundingClientRect().bottom,
+    scoresBelowNavigation: area.top >= header.getBoundingClientRect().bottom - 1,
     font: parseFloat(getComputedStyle(strip).fontSize),
     scoresVisible: values.every(r => r.left >= area.left - 1 && r.right <= area.right + 1
       && r.top >= area.top - 1 && r.bottom <= area.bottom + 1),
@@ -48,10 +48,11 @@ for (const width of [320, 390]) {
       await expect(page.locator("body > .status-bar-edge")).toHaveAttribute("aria-hidden", "true");
       await expect(page.locator(".status-bar-edge")).toBeHidden();
       const nav = page.locator(".game-page .nav");
-      await expect(nav.locator(".header-score-value")).toHaveCount(seats);
+      await expect(page.locator("#game-island .header-score-value")).toHaveCount(seats);
+      await expect(nav.locator(".game-wordmark")).toBeVisible();
       await expect(nav.getByRole("link", {name:"Chat", exact:true})).toBeVisible();
       const layout = await nav.evaluate(headerLayout);
-      if (seats === 2 && layout.actions <= 2) expect(layout.scoreAndBackShareRow).toBe(true);
+      expect(layout.scoresBelowNavigation).toBe(true);
       expect(layout.font).toBeGreaterThanOrEqual(13);
       expect(layout.scoresVisible).toBe(true);
       expect(layout.distinctTargets).toBe(true);

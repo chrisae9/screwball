@@ -96,6 +96,13 @@ test("an unread chat and a capped activity count fit below the phone status edge
   await expect(count).toHaveText("9+");
   const badge = await count.boundingBox();
   const target = await bell.boundingBox();
+  const title = await page.locator(".game-wordmark .brand").boundingBox();
+  const back = await page.getByRole("link", {name:"Back to games"}).boundingBox();
+  const invite = await page.getByRole("link", {name:"Invite player"}).boundingBox();
+  expect(title.y).toBeCloseTo(back.y, 0);
+  expect(title.x).toBeGreaterThanOrEqual(back.x + back.width);
+  expect(title.x + title.width).toBeLessThanOrEqual(invite.x);
+  expect(invite.width).toBeGreaterThanOrEqual(44);
   // The installed iPhone app paints a six-pixel strip above a flush toolbar.
   expect(badge.y - target.y).toBeGreaterThanOrEqual(6);
   expect(badge.x + badge.width).toBeLessThanOrEqual(target.x + target.width);

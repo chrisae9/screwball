@@ -33,8 +33,8 @@ test("account icon survives login and appears in another player's new and existi
 
     await page.request.post("/auth/logout", {maxRedirects:0});
     await page.request.post("/auth/login/begin", {data:{username:player}});
-    await page.goto("/");
-    await expect(page.locator(".profile-greeting .player-avatar")).toHaveAttribute("data-avatar-id", String(choice.id));
+    await page.goto("/settings");
+    await expect(savedIcon).toHaveAttribute("data-avatar-id", String(choice.id));
     const other = await host.newPage();
     await other.goto("/settings");
     await expect(other.locator(".avatar-picker summary .player-avatar")).toHaveAttribute("data-avatar-id",String(legacy.avatar_id));

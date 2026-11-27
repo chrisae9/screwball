@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 
 const game = "/games/1756fa1c-f0b0-48d0-8304-8a79c4230ef6";
-const colors = {dark: "rgb(17, 19, 15)", light: "rgb(244, 241, 234)"};
+const colors = {dark: "rgb(23, 22, 19)", light: "rgb(247, 244, 237)"};
 const palette = (page, mode) => expect(page.locator("body")).toHaveCSS("background-color", colors[mode]);
 
 test("appearance follows the phone or a saved override without disturbing a move", async ({page, context}) => {
@@ -39,6 +39,7 @@ test("diagnostics live in Settings and each screen has a single route back", asy
   await page.goto("/");
   await expect(page.locator('a[href^="/debug/"]')).toHaveCount(0);
   await page.getByRole("link", {name:"Settings"}).click();
+  await expect(page.getByRole("button", {name:"Sign out"})).toBeVisible();
   await expect(page.locator('a[href="/"]')).toHaveCount(1);
   async function checkScreen(label) {
     await page.getByText("Diagnostics", {exact:true}).click();

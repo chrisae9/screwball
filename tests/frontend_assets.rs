@@ -417,35 +417,23 @@ fn dark_mode_uses_browser_preference_and_keeps_tiles_legible() {
 }
 
 #[test]
-fn header_has_single_home_link_and_mobile_score() {
+fn match_scores_show_each_player_beside_the_board() {
+    let board_css = include_str!("../public/board-theme.css");
     assert!(
-        GAME_JS.contains("function renderHeaderScores(game)")
-            && GAME_JS.contains("header-score")
-            && GAME_JS.contains("turn-dot")
-            && GAME_JS.contains("item.classList.add(\"on-turn\")")
-            && GAME_JS.contains("return name;")
-            && !GAME_JS.contains("if (seat.is_you) return \"you\""),
-        "mobile header should render player names/scores and mark the current turn by treatment",
+        GAME_JS.contains("function MatchScores({ game })")
+            && GAME_JS.contains("header-score-name")
+            && GAME_JS.contains("header-score-value")
+            && GAME_JS.contains("seat.avatar_id")
+            && GAME_JS.contains("board-caption")
+            && GAME_JS.contains("statusText(game)"),
+        "match scores must show each player's name, avatar and points with the turn near the board",
     );
     assert!(
-        !GAME_JS.contains("demo-link"),
-        "demo link should not exist in the client bundle",
+        css_rule_contains(".header-score-name", "text-overflow: ellipsis;")
+            && board_css.contains("grid-template-columns: auto minmax(0,1fr);"),
+        "long player names must leave room for the score",
     );
-    assert!(
-        css_rule_contains(".nav .brand", "min-height: 44px;"),
-        "the home title should be a full-size touch target",
-    );
-    assert!(
-        css_rule_contains(".header-score-name", "overflow: hidden;")
-            && css_rule_contains(".header-score-name", "text-overflow: ellipsis;")
-            && css_rule_contains(".header-score-name", "white-space: nowrap;")
-            && APP_CSS.contains(".header-score-value {\n  flex: 0 0 auto;")
-            && APP_CSS.contains("flex: 0 1 auto;")
-            && APP_CSS.contains("max-width: min(10rem, 42vw);")
-            && css_rule_contains(".header-score", "display: inline-flex;")
-            && APP_CSS.contains(".header-score {\n    max-width: min(9rem, 40vw);"),
-        "long player names should ellipsize while centered score pills stay content-sized with max-widths",
-    );
+    assert!(css_rule_contains(".nav .brand", "min-height: 44px;"));
 }
 
 #[test]

@@ -319,6 +319,8 @@ function Board({
   onMovePending,
   onRecallPending,
   autoZoom,
+  zoomControl,
+  onZoomChange,
 }) {
   const byPos = new Map(pending.map((p) => [idx(p.row, p.col), p]));
   const boardRef = useRef(null);
@@ -334,6 +336,7 @@ function Board({
   function applyTransform() {
     if (!boardRef.current) return;
     const s = scaleRef.current;
+    onZoomChange(s > 1);
     const { x, y } = panRef.current;
     const el = boardRef.current;
     if (s === 1 && x === 0 && y === 0) {
@@ -350,6 +353,7 @@ function Board({
     const el = boardRef.current;
     if (!el) return;
     scaleRef.current = s;
+    onZoomChange(s > 1);
     panRef.current = { x, y };
     el.style.transformOrigin = "0 0";
     el.style.transition = "transform 0.3s ease";
@@ -404,6 +408,19 @@ function Board({
   function resetZoom() {
     animateBoardTo(1, 0, 0);
   }
+
+  useEffect(() => {
+    zoomControl.current = () => {
+      autoEnteredRef.current = false;
+      if (scaleRef.current > 1) {
+        resetZoom();
+      } else {
+        const target = pending.at(-1) || game.last_play?.at(-1);
+        zoomToCell(cursor?.row ?? target?.row ?? 7, cursor?.col ?? target?.col ?? 7);
+      }
+    };
+    return () => { zoomControl.current = null; };
+  }, [cursor, pending, game.last_play]);
 
   function handleBoardTouchStart(e) {
     // Start dragging an already-placed (pending) tile to another square (205).
@@ -567,6 +584,7 @@ function Board({
       pinchState.current = null;
       if (scaleRef.current < 1.1) {
         scaleRef.current = 1;
+        onZoomChange(false);
         panRef.current = { x: 0, y: 0 };
         if (boardRef.current) {
           boardRef.current.style.transition = "";
@@ -646,9 +664,9 @@ function Board({
       document.removeEventListener("touchmove", onDocumentTouchMove);
       document.removeEventListener("touchend", onDocumentTouchEnd);
       document.removeEventListener("touchcancel", onDocumentTouchCancel);
-      clearTimeout(autoZoomTimer.current);
     };
   });
+  useEffect(() => () => clearTimeout(autoZoomTimer.current), []);
 
   // Double-tap to reset zoom
   const lastTapRef = useRef(0);
@@ -656,6 +674,7 @@ function Board({
     const now = Date.now();
     if (now - lastTapRef.current < 300 && e.touches.length === 1) {
       scaleRef.current = 1;
+      onZoomChange(false);
       panRef.current = { x: 0, y: 0 };
       if (boardRef.current) {
         boardRef.current.style.transition = "";
@@ -1356,8 +1375,7 @@ function MoveLog({ game }) {
       const name = game.seats[mv.seat] ? game.seats[mv.seat].name : "?";
       if (mv.kind === "play") {
         return html`<li key=${absIdx}>
-          <strong>${name}</strong>:${" "}
-          ${mv.words.map(
+          <div class="move-summary"><span><span class="move-player">${name}</span> · ${mv.words.map(
             (w, i) => html`${i ? ", " : ""}<button
                 type="button"
                 class="word-def"
@@ -1365,7 +1383,7 @@ function MoveLog({ game }) {
                 onClick=${() => toggleDef(absIdx, w)}
               >${w}</button>`,
           )}
-          ${` (+${mv.points})`}
+          </span><strong class="move-points">+${mv.points}</strong></div>
           ${mv.best
             ? html` <span class="best-play muted"
                 >best: ${mv.best.words.join(", ")} (+${mv.best.points})</span
@@ -1651,13 +1669,7 @@ function statusText(game) {
   return seat ? `${seat.name}'s turn` : "In progress";
 }
 
-function shortScoreName(seat) {
-  const name = (seat.name || "").trim();
-  if (!name) return "open";
-  return name;
-}
-
-function renderHeaderScores(game) {
+function syncInviteLink(game) {
   const nav = document.querySelector(".nav");
   if (!nav) return;
   const links = nav.querySelector(".nav-links");
@@ -1671,32 +1683,22 @@ function renderHeaderScores(game) {
   } else if (!game.can_invite && invitation) {
     invitation.remove();
   }
-  let strip = nav.querySelector(".header-scores");
-  if (!strip) {
-    strip = document.createElement("div");
-    strip.className = "header-scores";
-    nav.querySelector(".nav-links").before(strip);
-  }
-  strip.replaceChildren();
-  for (const seat of game.seats) {
-    const item = document.createElement("span");
-    item.className = "header-score";
-    item.title = `${seat.name}: ${seat.score}`;
-    if (game.status === "Active" && seat.index === game.turn) {
-      item.classList.add("on-turn");
-      const dot = document.createElement("span");
-      dot.className = "turn-dot";
-      item.append(dot);
-    }
-    const name = document.createElement("span");
-    name.className = "header-score-name";
-    name.textContent = shortScoreName(seat);
-    const value = document.createElement("span");
-    value.className = "header-score-value";
-    value.textContent = String(seat.score);
-    item.append(name, value);
-    strip.append(item);
-  }
+}
+
+function MatchScores({ game }) {
+  return html`<section class="board-summary" aria-label="Scores">
+    <h2>Scores</h2>
+    <div class="header-scores">
+      ${game.seats.map(seat => html`<div key=${seat.index} class=${"header-score" + (seat.on_turn ? " on-turn" : "")}>
+        ${seat.avatar_id != null ? h("span", {
+          class: "player-avatar", "aria-hidden": "true",
+          style: {"--avatar-col": seat.avatar_id % 10, "--avatar-row": Math.floor(seat.avatar_id / 10)},
+        }) : html`<span class="seat-symbol" aria-hidden="true">${seat.kind === "bot" ? "✦" : "+"}</span>`}
+        <span class="header-score-name" title=${seat.name}>${seat.name}</span>
+        <strong class="header-score-value">${seat.score}</strong>
+      </div>`)}
+    </div>
+  </section>`;
 }
 
 // John Mode helper: valid 2-letter words containing the active rack letter.
@@ -1769,6 +1771,8 @@ function recoverChatDraft(game) {
 
 function App({ gameId, initial, autoZoom }) {
   const [game, setGame] = useState(initial);
+  const zoomControl = useRef(null);
+  const [zoomed, setZoomed] = useState(false);
   const [otherTurns, setOtherTurns] = useState(0);
   const latestGame = useRef(initial);
 
@@ -1952,12 +1956,8 @@ function App({ gameId, initial, autoZoom }) {
     setRackOrder((game.your_rack || []).map((_, i) => i));
   }, [sig]);
 
-  // Inject live scores into the nav; the server-rendered nav is outside the
-  // Preact island.
-  useEffect(() => {
-    renderHeaderScores(game);
-    return () => document.querySelector(".header-scores")?.remove();
-  }, [game]);
+  // Invitation links belong to the server-rendered navigation outside the island.
+  useEffect(() => { syncInviteLink(game); }, [game]);
 
   const usedRackIds = new Set(pending.map((p) => p.rackId));
   const rackTiles = game.your_rack || [];
@@ -2468,6 +2468,8 @@ function App({ gameId, initial, autoZoom }) {
       onMovePending=${movePending}
       onRecallPending=${recallByRackId}
       autoZoom=${autoZoom}
+      zoomControl=${zoomControl}
+      onZoomChange=${setZoomed}
     />`,
     !seated && hasOpenSeat ? html`<${JoinForm} gameId=${gameId} />` : null,
   ]);
@@ -2613,11 +2615,8 @@ function App({ gameId, initial, autoZoom }) {
       ${game.mimi_mode ? html`<span class="game-badge">Mimi Mode</span>` : null}
       ${game.hints_allowed > 0 ? html`<span class="game-badge">${game.hints_allowed} hint${game.hints_allowed > 1 ? "s" : ""}/player</span>` : null}
     </div>
-    <${Scoreboard} game=${game} />
-    <p class=${game.bag_count > 0 && game.bag_count < 7 ? "muted bag-low" : "muted"}>
-      Tiles in bag: ${game.bag_count}
-    </p>
-    <${MoveLog} game=${game} />
+    <section class="board-panel"><h2>Moves</h2><${MoveLog} game=${game} /></section>
+    <section class="board-panel"><h2>Player stats</h2><${Scoreboard} game=${game} /></section>
     ${seated && !finished
       ? h("button", {
           type: "button",
@@ -2629,10 +2628,21 @@ function App({ gameId, initial, autoZoom }) {
 
   </aside>`;
   const playColumn = h("div", { class: "play-column" }, [
+    html`<div class="board-caption">
+      <h1 class="status"><span class="turn-dot" aria-hidden="true"></span>${statusText(game)}</h1>
+      <span class=${"board-bag" + (game.bag_count > 0 && game.bag_count < 7 ? " bag-low" : "")}>Tiles in bag: ${game.bag_count}</span>
+    </div>`,
     boardWrap,
     rackArea,
+    html`<button type="button" class="board-zoom" onClick=${() => zoomControl.current?.()}>
+        <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round">
+          <circle cx="10" cy="10" r="6.5"/><path d="m15 15 5 5M7 10h6"/>${!zoomed && html`<path d="M10 7v6"/>`}
+        </svg>
+        ${zoomed ? "Zoom out" : "Zoom in"}
+      </button>`,
   ]);
   const layout = h("div", { class: "game-layout" }, [
+    html`<${MatchScores} game=${game} />`,
     playColumn,
     sidebar,
   ]);
@@ -2668,7 +2678,6 @@ function App({ gameId, initial, autoZoom }) {
     : null;
 
   return h("div", { class: "game" }, [
-    html`<h1 class="status">${statusText(game)}</h1>`,
     finished ? html`<${Results} game=${game} />` : null,
     layout,
     blankPicker,

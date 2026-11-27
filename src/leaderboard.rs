@@ -6,13 +6,14 @@ use uuid::Uuid;
 use crate::{
     app::AppState,
     models::{Game, GameStatus, MoveKind, SCORELESS_LIMIT, SeatKind},
-    render::{escape, layout},
+    render::{escape, layout_with_head},
     session::AuthUser,
 };
 
 #[derive(Default)]
 struct Standing {
     name: String,
+    avatar: u8,
     played: usize,
     wins: usize,
     draws: usize,
@@ -24,19 +25,22 @@ impl Standing {
     }
 }
 
-fn ranked_game(game: &Game) -> bool {
-    if game.status != GameStatus::Finished || game.seats.len() < 2 {
-        return false;
-    }
+pub(crate) fn has_final_scores(game: &Game) -> bool {
     // Abandonment also sets Finished, but never settles scores. In games where
     // every adjustment was zero, the engine does not add settlement moves.
-    let settled = game.consecutive_scoreless >= SCORELESS_LIMIT
+    game.consecutive_scoreless >= SCORELESS_LIMIT
         || (game.bag.is_empty() && game.seats.iter().any(|seat| seat.rack.is_empty()))
         || game
             .moves
             .iter()
-            .any(|m| matches!(m.kind, MoveKind::EndAdjustment { .. }));
-    settled
+            .any(|m| matches!(m.kind, MoveKind::EndAdjustment { .. }))
+}
+
+fn ranked_game(game: &Game) -> bool {
+    if game.status != GameStatus::Finished || game.seats.len() < 2 {
+        return false;
+    }
+    has_final_scores(game)
         && game
             .seats
             .iter()
@@ -58,6 +62,7 @@ fn standings<'a>(
             if let SeatKind::Human { user_id: Some(id) } = seat.kind {
                 let record = players.entry(id).or_insert_with(|| Standing {
                     name: names.seat(seat).into_owned(),
+                    avatar: names.avatar_for_seat(seat),
                     ..Standing::default()
                 });
                 record.played += 1;
@@ -91,7 +96,7 @@ pub async fn page(State(state): State<AppState>, AuthUser(viewer): AuthUser) -> 
 fn render(players: &[(Uuid, Standing)], viewer: Uuid) -> String {
     let mut body = String::from(
         r#"<section class="card leaderboard"><h1>Leaderboard</h1>
-<p class="leaderboard-rules">A win earns 2 points. A shared first place earns 1. Rankings include all completed human-only games with at least one word played.</p>"#,
+<details class="leaderboard-explainer"><summary>How scoring works</summary><p class="leaderboard-rules">A win earns 2 points. A shared first place earns 1. Rankings include all completed human-only games with at least one word played.</p></details>"#,
     );
     if players.is_empty() {
         body.push_str(r#"<div class="leaderboard-empty"><h2>No ranked games yet</h2><p>Finish a game with another player to appear here.</p><a class="button" href="/games/new">Start a game</a></div>"#);
@@ -107,18 +112,19 @@ fn render(players: &[(Uuid, Standing)], viewer: Uuid) -> String {
             }
             let you = if *id == viewer { " (you)" } else { "" };
             let name = escape(&record.name);
+            let avatar = crate::avatars::image(record.avatar);
             let games = record.played;
             let wins = record.wins;
             let draws = record.draws;
             let game_label = if games == 1 { "game" } else { "games" };
             let win_label = if wins == 1 { "win" } else { "wins" };
             let draw_label = if draws == 1 { "tie" } else { "ties" };
-            write!(body, r#"<tr><td class="leaderboard-rank">{rank}</td><th scope="row">{name}{you}<span class="leaderboard-record">{games} {game_label} · {wins} {win_label} · {draws} {draw_label}</span></th><td class="leaderboard-points">{points}</td></tr>"#).unwrap();
+            write!(body, r#"<tr><td class="leaderboard-rank">{rank}</td><th scope="row"><div class="standing-player">{avatar}<div>{name}{you}<span class="leaderboard-record">{games} {game_label} · {wins} {win_label} · {draws} {draw_label}</span></div></div></th><td class="leaderboard-points">{points}</td></tr>"#).unwrap();
         }
         body.push_str("</tbody></table>");
     }
     body.push_str("</section>");
-    layout("Leaderboard", &body)
+    layout_with_head("Leaderboard", &body, "", "leaderboard-page", "")
 }
 
 #[cfg(test)]
