@@ -25,7 +25,6 @@ pub struct GameView {
     pub your_seat: Option<usize>,
     pub your_rack: Option<Vec<TileView>>,
     pub your_tile_style: String,
-    pub rack_finish: String,
     pub uniform_board: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub finish_reward: Option<u32>,
@@ -157,7 +156,6 @@ impl GameView {
             your_seat,
             your_rack,
             your_tile_style,
-            rack_finish: names.rack_for_user(viewer).to_owned(),
             uniform_board,
             finish_reward: crate::cosmetics::finish_reward(game, viewer),
             seats,

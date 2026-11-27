@@ -57,25 +57,48 @@ async function submit(page, url, moves) {
   expect((await page.request.post(url + "/move", {data:{kind:"play", placements:moves}})).ok()).toBe(true);
 }
 
+async function playableDeal(page, other, recipientId) {
+  // Actual racks are dealt randomly; retry only when they cannot form a cross.
+  for (let attempt = 0; attempt < 8; attempt++) {
+    // eslint-disable-next-line no-await-in-loop
+    const game = await deal(page, other, recipientId);
+    if (game) return game;
+  }
+  throw new Error("Could not form a two-player opening after eight deals");
+}
+
+async function finish(page, other, url) {
+  for (const player of [page,other,page,other,page,other]) {
+    // eslint-disable-next-line no-await-in-loop
+    const result = await player.request.post(url + "/move", {data:{kind:"pass"}});
+    expect(result.ok()).toBe(true);
+  }
+}
+
+async function earnFinishRewards(page, other, recipientId) {
+  const {url, turns} = await playableDeal(page, other, recipientId);
+  await submit(page, url, turns[0]);
+  await submit(other, url, turns[1]);
+  await finish(page, other, url);
+}
+
 test("two players see their tile finishes and can independently use a classic board", async ({page, browser, baseURL}) => {
   const guest = await browser.newContext({baseURL});
   try {
     const other = await guest.newPage();
     const suffix = randomUUID().slice(0, 8);
     const otherName = "Guest" + suffix;
-    await Promise.all([[page,"Host" + suffix,"cobalt"],[other,otherName,"cherry"]].map(async ([p,name,style]) => {
+    await Promise.all([[page,"Host" + suffix],[other,otherName]].map(async ([p,name]) => {
       expect((await p.request.post("/auth/register/begin",{data:{username:name,display_name:name}})).ok()).toBe(true);
-      await shop(p, "starter", style);
     }));
     const [recipient] = await (await page.request.get("/api/players?q=" + otherName)).json();
-    let game;
-    // A rare deal may lack a playable opening; only retry that case.
-    for (let attempt = 0; attempt < 8 && !game; attempt++) {
+    // Three naturally completed two-player matches earn both players enough to buy a finish.
+    for (let i = 0; i < 3; i++) {
       // eslint-disable-next-line no-await-in-loop
-      game = await deal(page, other, recipient.id);
+      await earnFinishRewards(page, other, recipient.id);
     }
-    expect(game).toBeTruthy();
-    const {url, turns} = game;
+    await Promise.all([shop(page, "buy", "cobalt"), shop(other, "buy", "cherry")]);
+    const {url, turns} = await playableDeal(page, other, recipient.id);
     const board = page.locator("#game-island .board");
     const rack = page.locator("#game-island .rack");
     await expect(rack.locator('button[data-tile-style="cobalt"]')).toHaveCount(7);
@@ -92,7 +115,8 @@ test("two players see their tile finishes and can independently use a classic bo
     await expect(cobalt).toHaveCount(2);
     await expect(cherry).toHaveCount(1);
     await expect(other.locator('.rack button[data-tile-style="cherry"]')).toHaveCount(7);
-    await expect(other.locator(".rack")).toHaveAttribute("data-rack-finish", "maple");
+    await expect(other.locator(".rack")).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+    await expect(other.locator(".rack")).toHaveCSS("background-image", "none");
     const cobaltPaint = await paint(cobalt);
     expect(cobaltPaint).not.toBe(await paint(cherry));
     await other.getByRole("button", {name:"Zoom in",exact:true}).click();
@@ -117,12 +141,7 @@ test("two players see their tile finishes and can independently use a classic bo
     await page.reload();
     await expect(board.locator('.tile:not(.pending-cell)[data-tile-style="cobalt"]')).toHaveCount(2);
     await expect(board.locator('.tile:not(.pending-cell)[data-tile-style="classic"]')).toHaveCount(1);
-    // Both players scored. Six consecutive passes trigger the real end-game settlement.
-    for (const player of [page,other,page,other,page,other]) {
-      // eslint-disable-next-line no-await-in-loop
-      const result = await player.request.post(url + "/move", {data:{kind:"pass"}});
-      expect(result.ok()).toBe(true);
-    }
+    await finish(page, other, url);
     await page.reload();
     await expect(page.locator(".results .finish-reward")).toHaveText("+20 coins for finishing");
     await other.reload();

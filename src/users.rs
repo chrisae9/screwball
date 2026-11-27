@@ -142,12 +142,6 @@ impl PlayerNames {
             .map_or("classic", |equipment| equipment.tile())
     }
 
-    pub fn rack_for_user(&self, id: Uuid) -> &str {
-        self.equipment
-            .get(&id)
-            .map_or("maple", |equipment| equipment.rack())
-    }
-
     pub fn uniform_board(&self, id: Uuid) -> bool {
         self.equipment
             .get(&id)

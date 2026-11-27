@@ -1,0 +1,97 @@
+import {test, expect} from "@playwright/test";
+import {randomUUID} from "node:crypto";
+import {spawn} from "node:child_process";
+import {once} from "node:events";
+import {mkdtemp, mkdir, readFile, writeFile, rm} from "node:fs/promises";
+import {tmpdir} from "node:os";
+import {join} from "node:path";
+import {createInterface} from "node:readline";
+
+const tiles = [["koi",90],["circuit",125],["kintsugi",200],["rift",275],["serpent",0],["orrery",0]];
+
+async function seed(dir) {
+  const fixture = "e2e/fixture-data";
+  const game = JSON.parse(await readFile(fixture + "/games/1756fa1c-f0b0-48d0-8304-8a79c4230ef6.json","utf8"));
+  const user = JSON.parse(await readFile(fixture + "/users/1d92bc0a-ff6c-41b7-93da-4309788e3d18.json","utf8"));
+  // Seed the saved reward ledger. The test buys and equips every item through the real shop.
+  const finishes = Object.fromEntries(Array.from({length:42}, () => [randomUUID(),"human"]));
+  const daily = Array.from({length:14}, (_,i) => "2025-06-" + String(i+1).padStart(2,"0"));
+  user.settings = {cosmetics:{rewards:{finishes,daily,best_play:75}}};
+  const placements = [..."CAT"].map((letter, i) => {
+    const tile = {letter, is_blank:letter === "A"};
+    game.board.squares[7*15+6+i].tile = tile;
+    return {letter, is_blank:tile.is_blank, position:{row:7,col:6+i}};
+  });
+  game.seats[0].score = 8;
+  game.seats[1].kind = {Human:{user_id:randomUUID()}};
+  game.seats[1].name = "Robin";
+  game.moves = [{seat:0,kind:{Play:{placements}},words:["CAT"],points:8}, {seat:1,kind:"Pass",words:[],points:0}];
+  await Promise.all(["games","users"].map(d=>mkdir(join(dir,d))));
+  await Promise.all([[game,"games"],[user,"users"]].map(([entity,folder]) =>
+    writeFile(join(dir,folder,entity.id + ".json"), JSON.stringify(entity))));
+  return {game, user};
+}
+
+const paint = item => item.first().evaluate(el => getComputedStyle(el).backgroundImage);
+
+test("paid and earned finishes equip on board letters, blanks, drafts and held tiles", async ({page}) => {
+  const dir = await mkdtemp(join(tmpdir(), "scrabble-rare-"));
+  let server, exited;
+  try {
+    const {game, user} = await seed(dir);
+    server = spawn("./target/debug/screwball", [], {env:{...process.env, PORT:"0", PASSKEY_DISABLED:"1", DATA_PATH:dir},stdio:["ignore","pipe","inherit"]});
+    exited = once(server,"exit");
+    let base;
+    for await (const line of createInterface({input:server.stdout})) {
+      const port = line.match(/^listening on port (\d+)$/);
+      if (port) { base = "http://127.0.0.1:" + port[1]; break; }
+    }
+    expect(base).toBeTruthy();
+    expect((await page.request.post(base + "/auth/login/begin",{data:{username:user.username}})).ok()).toBe(true);
+
+    let balance = 910; // 42 completed multiplayer games plus 14 scoring dates.
+    const paints = new Set();
+    async function choose(id, cost) {
+      await page.goto(base + "/shop?item=" + id);
+      await page.getByRole("button",{name:cost ? /Unlock.*equip/i : "Equip",exact:!cost}).click();
+      balance -= cost;
+      await expect(page.locator(".coin-balance")).toContainText(balance + " coins");
+      await expect(page.getByRole("status")).toContainText("Equipped");
+      await page.goto(base + "/games/" + game.id);
+    }
+    async function checkTile([id, cost]) {
+      await choose(id, cost);
+      const board = page.locator("#game-island .board");
+      const tile = board.locator('.cell.tile[data-tile-style="' + id + '"]');
+      const key = page.locator('.rack button[data-tile-style="' + id + '"]:not(.tile-blank)').first();
+      await expect(tile).toHaveCount(3);
+      await expect(tile.first()).toHaveClass(/last-play/);
+      const blank = tile.filter({has:page.locator(".tile-blank")});
+      await expect(blank.locator(".tile-points")).toHaveText("0");
+      await expect(blank.locator(".tile-letter")).toHaveCSS("text-decoration-line","underline");
+      const finish = await paint(tile);
+      expect(finish).not.toBe("none");
+      expect(await paint(key)).toBe(finish);
+      paints.add(finish);
+      await board.locator('[data-row="7"][data-col="9"]').click();
+      await key.click();
+      const draft = board.locator(".pending-cell");
+      await expect(draft).toHaveAttribute("data-tile-style", id);
+      await expect(draft.locator(".tile-face")).toHaveCSS("outline-style","dashed");
+      expect(await paint(draft.locator(".tile-face"))).toBe(finish);
+      const geometry = await draft.boundingBox();
+      expect(Math.abs(geometry.width - geometry.height)).toBeLessThan(.25);
+      await page.getByRole("button",{name:"Clear",exact:true}).click();
+    }
+    for (const item of tiles) {
+      // Each selection spends this player's balance and changes the same board.
+      // eslint-disable-next-line no-await-in-loop
+      await checkTile(item);
+    }
+    expect(paints.size).toBe(tiles.length);
+  } finally {
+    if (server && server.exitCode === null && server.signalCode === null) server.kill();
+    if (exited) await exited;
+    await rm(dir,{recursive:true,force:true});
+  }
+});

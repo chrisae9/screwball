@@ -113,11 +113,9 @@ body.game-page { overflow-y: auto; }
   grid-template-columns: repeat(var(--rack-slots), var(--rack-side));
   justify-content: center;
   gap: var(--rack-gap);
-  padding: .4rem;
-  border: 1px solid var(--line);
-  border-bottom: 3px solid var(--cosmetic-rack-edge, var(--grid-line));
-  border-radius: 6px;
-  background: var(--cosmetic-rack-face, var(--surface));
+  padding: calc(.4rem + 1px) calc(.4rem + 1px) calc(.4rem + 3px);
+  border: 0;
+  background: transparent;
 }
 .game-page .rack .rack-tile {
   width: 100%;

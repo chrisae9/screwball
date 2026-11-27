@@ -10,70 +10,51 @@ use crate::{
     models::{Game, GameStatus, MoveKind, RACK_SIZE, SeatKind},
 };
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "lowercase")]
-pub enum ItemKind {
-    Tile,
-    Rack,
-}
-
 #[derive(Debug, Serialize)]
 pub struct Item {
     pub id: &'static str,
     pub name: &'static str,
-    pub kind: ItemKind,
     pub price: u32,
-    pub starter: bool,
     pub trophy: bool,
+    pub rarity: Option<&'static str>,
 }
 
 impl Item {
-    const fn tile(
-        id: &'static str,
-        name: &'static str,
-        price: u32,
-        starter: bool,
-        trophy: bool,
-    ) -> Self {
+    const fn tile(id: &'static str, name: &'static str, price: u32, trophy: bool) -> Self {
         Self {
             id,
             name,
             price,
-            starter,
             trophy,
-            kind: ItemKind::Tile,
+            rarity: None,
         }
     }
-    const fn rack(id: &'static str, name: &'static str, price: u32) -> Self {
-        Self {
-            id,
-            name,
-            price,
-            starter: false,
-            trophy: false,
-            kind: ItemKind::Rack,
-        }
+    const fn rarity(mut self, rarity: &'static str) -> Self {
+        self.rarity = Some(rarity);
+        self
     }
 }
 
 pub fn catalog() -> &'static [Item] {
     static CATALOG: &[Item] = &[
-        Item::tile("classic", "Classic Ivory", 0, false, false),
-        Item::tile("cobalt", "Cobalt Enamel", 50, true, false),
-        Item::tile("cherry", "Cherry Lacquer", 50, true, false),
-        Item::tile("lavender", "Lavender Pearl", 50, true, false),
-        Item::tile("forest", "Forest Green", 45, false, false),
-        Item::tile("amber", "Burnished Amber", 45, false, false),
-        Item::tile("slate", "Slate Blue", 60, false, false),
-        Item::tile("glacier", "Glacier Cut", 100, false, false),
-        Item::tile("obsidian", "Obsidian", 100, false, false),
-        Item::tile("solar", "Solar Flare", 150, false, false),
-        Item::tile("bingo", "Sevenfold", 0, false, true),
-        Item::tile("aurora", "Aurora", 0, false, true),
-        Item::rack("maple", "Natural Maple", 0),
-        Item::rack("walnut", "Black Walnut", 40),
-        Item::rack("midnight", "Midnight Lacquer", 65),
-        Item::rack("rosewood", "Polished Rosewood", 80),
+        Item::tile("classic", "Classic Ivory", 0, false),
+        Item::tile("cobalt", "Cobalt Enamel", 50, false),
+        Item::tile("cherry", "Cherry Lacquer", 50, false),
+        Item::tile("lavender", "Lavender Pearl", 50, false),
+        Item::tile("forest", "Forest Green", 45, false),
+        Item::tile("amber", "Burnished Amber", 45, false),
+        Item::tile("slate", "Slate Blue", 60, false),
+        Item::tile("glacier", "Glacier Cut", 100, false),
+        Item::tile("obsidian", "Obsidian", 100, false),
+        Item::tile("solar", "Solar Flare", 150, false),
+        Item::tile("bingo", "Sevenfold", 0, true),
+        Item::tile("aurora", "Aurora", 0, true),
+        Item::tile("koi", "Koi Pond", 90, false).rarity("Rare"),
+        Item::tile("circuit", "Arcade Circuit", 125, false).rarity("Rare"),
+        Item::tile("kintsugi", "Kintsugi", 200, false).rarity("Epic"),
+        Item::tile("rift", "Event Horizon", 275, false).rarity("Epic"),
+        Item::tile("serpent", "Dragon Scale", 0, true).rarity("Legendary"),
+        Item::tile("orrery", "Celestial Atlas", 0, true).rarity("Legendary"),
     ];
     CATALOG
 }
@@ -82,7 +63,6 @@ pub fn catalog() -> &'static [Item] {
 #[serde(default)]
 pub struct Equipment {
     tile: Option<String>,
-    rack: Option<String>,
     pub uniform_board: bool,
 }
 
@@ -90,15 +70,8 @@ impl Equipment {
     pub fn tile(&self) -> &str {
         self.tile.as_deref().unwrap_or("classic")
     }
-    pub fn rack(&self) -> &str {
-        self.rack.as_deref().unwrap_or("maple")
-    }
-
     fn equip(&mut self, item: &Item) {
-        match item.kind {
-            ItemKind::Tile => self.tile = (item.id != "classic").then(|| item.id.into()),
-            ItemKind::Rack => self.rack = (item.id != "maple").then(|| item.id.into()),
-        }
+        self.tile = (item.id != "classic").then(|| item.id.into());
     }
 }
 
@@ -155,16 +128,37 @@ struct Rewards {
     daily: BTreeSet<NaiveDate>,
     finishes: BTreeMap<Uuid, MatchReward>,
     bingo: bool,
+    best_play: u32,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(default)]
 pub struct Wallet {
     rewards: Rewards,
-    starter: Option<String>,
+    // Original releases allowed one free claim. Keep ownership for those players
+    // without creating a grant on new accounts.
+    #[serde(rename = "starter", skip_serializing_if = "Option::is_none")]
+    legacy_claim: Option<String>,
     // Persist the actual price paid, so later catalog changes do not rewrite balances.
+    #[serde(default, deserialize_with = "read_tile_receipts")]
     purchases: BTreeMap<String, u32>,
     pub equipment: Equipment,
+}
+
+/// A wallet's balance is earned coins less its original receipts. Dropping only
+/// retired rack purchases restores exactly what each player paid, once, regardless
+/// of whether the profile has already been rewritten or is opened repeatedly.
+fn read_tile_receipts<'de, D>(deserializer: D) -> Result<BTreeMap<String, u32>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let mut receipts = BTreeMap::<String, u32>::deserialize(deserializer)?;
+    for retired in [
+        "maple", "walnut", "midnight", "rosewood", "torii", "reactor",
+    ] {
+        receipts.remove(retired);
+    }
+    Ok(receipts)
 }
 
 impl Rewards {
@@ -188,6 +182,7 @@ impl Rewards {
                     self.daily.insert(day);
                 }
                 self.bingo |= placements.len() == RACK_SIZE;
+                self.best_play = self.best_play.max(mv.points);
             }
         }
         if let Some(reward) = MatchReward::for_game(game) {
@@ -201,6 +196,7 @@ impl Rewards {
             self.finishes.entry(id).or_insert(reward);
         }
         self.bingo |= other.bingo;
+        self.best_play = self.best_play.max(other.best_play);
     }
 }
 
@@ -223,9 +219,9 @@ impl Wallet {
             + (daily_words as u64) * 5;
         let spent: u64 = self.purchases.values().copied().map(u64::from).sum();
         let balance = u32::try_from(earned.saturating_sub(spent)).unwrap_or(u32::MAX);
-        let mut owned: BTreeSet<_> = ["classic".to_owned(), "maple".to_owned()]
+        let mut owned: BTreeSet<_> = ["classic".to_owned()]
             .into_iter()
-            .chain(self.starter.iter().cloned())
+            .chain(self.legacy_claim.iter().cloned())
             .chain(self.purchases.keys().cloned())
             .collect();
         if self.rewards.bingo {
@@ -234,13 +230,18 @@ impl Wallet {
         if human_finishes >= 5 {
             owned.insert("aurora".into());
         }
+        if self.rewards.best_play >= 75 {
+            owned.insert("serpent".into());
+        }
+        if daily_words >= 14 {
+            owned.insert("orrery".into());
+        }
         Studio {
+            best_play: self.rewards.best_play,
             balance,
-            starter_available: self.starter.is_none(),
             bingo: self.rewards.bingo,
             owned,
             tile: self.equipment.tile().to_owned(),
-            rack: self.equipment.rack().to_owned(),
             uniform_board: self.equipment.uniform_board,
             human_finishes,
             bot_finishes,
@@ -263,21 +264,12 @@ impl Wallet {
             .ok_or_else(|| AppError::bad_request("Unknown studio item."))?;
         let studio = self.studio();
         match action {
-            "starter" => {
-                if self.starter.as_deref() == Some(item.id) {
-                    return Ok(());
-                }
-                if !item.starter || !studio.starter_available || studio.owned.contains(item.id) {
-                    return Err(AppError::conflict("Choose one available starter tile set."));
-                }
-                self.starter = Some(item.id.into());
-            }
             "buy" => {
-                if studio.owned.contains(item.id) {
-                    return Ok(());
-                }
                 if item.trophy {
                     return Err(AppError::conflict("Earn this tile set by playing."));
+                }
+                if studio.owned.contains(item.id) {
+                    return Ok(());
                 }
                 if studio.balance < item.price {
                     return Err(AppError::conflict("You need more coins for this item."));
@@ -296,11 +288,10 @@ impl Wallet {
 #[derive(Debug, Clone, Serialize)]
 pub struct Studio {
     pub balance: u32,
-    pub starter_available: bool,
+    pub best_play: u32,
     pub bingo: bool,
     pub owned: BTreeSet<String>,
     pub tile: String,
-    pub rack: String,
     pub uniform_board: bool,
     pub daily_words: usize,
     pub human_finishes: usize,
@@ -467,6 +458,196 @@ mod tests {
     }
 
     #[test]
+    fn legendary_unlocks_use_personal_valid_plays_and_distinct_utc_dates() {
+        let user = Uuid::new_v4();
+        let mut game = game_for(user, false);
+        play_word(&mut game, 0, "AT");
+        let mut play = game.moves.pop().unwrap();
+        play.played_on = None; // Older saved games still prove a score, but cannot prove a date.
+        play.points = 74;
+        game.moves.push(play.clone());
+        let mut other = play.clone();
+        other.seat = 1;
+        other.points = 200;
+        game.moves.push(other);
+        let mut invalid = play.clone();
+        invalid.points = 200;
+        invalid.kind = MoveKind::Pass;
+        game.moves.push(invalid);
+        let mut wallet: Wallet =
+            serde_json::from_str(r#"{"rewards":{"bingo":false,"daily":[]}}"#).unwrap();
+        wallet.rewards.credit(user, &game);
+        assert_eq!(wallet.studio().best_play, 74);
+        assert!(!wallet.studio().owned.contains("serpent"));
+        assert!(wallet.apply("buy", "serpent").is_err());
+        assert!(wallet.apply("equip", "serpent").is_err());
+
+        play.points = 75;
+        game.moves = vec![play];
+        let mut older = Rewards::default();
+        older.credit(user, &game);
+        wallet.rewards.merge(older);
+        assert!(wallet.studio().owned.contains("serpent"));
+        wallet.apply("equip", "serpent").unwrap();
+        assert!(wallet.apply("buy", "serpent").is_err());
+        assert_eq!(wallet.studio().daily_words, 0);
+
+        let mut recent = Rewards::default();
+        game.moves[0].points = 3;
+        for day in (1..=25).step_by(2) {
+            game.moves[0].played_on = NaiveDate::from_ymd_opt(2026, 1, day);
+            recent.credit(user, &game);
+            recent.credit(user, &game);
+        }
+        wallet.rewards.merge(recent);
+        assert_eq!(wallet.studio().daily_words, 13);
+        assert!(!wallet.studio().owned.contains("orrery"));
+        assert!(wallet.apply("buy", "orrery").is_err());
+        game.moves[0].played_on = NaiveDate::from_ymd_opt(2026, 2, 14);
+        wallet.rewards.credit(user, &game);
+        wallet.apply("equip", "orrery").unwrap();
+        let reloaded: Wallet =
+            serde_json::from_str(&serde_json::to_string(&wallet).unwrap()).unwrap();
+        let studio = reloaded.studio();
+        assert_eq!(studio.daily_words, 14);
+        assert_eq!(studio.best_play, 75);
+        assert_eq!(studio.tile, "orrery");
+        assert_eq!(studio.balance, 70);
+        assert!(studio.owned.contains("serpent"));
+        assert!(studio.owned.contains("orrery"));
+    }
+
+    #[test]
+    fn new_catalog_offers_have_stable_prices_rarities_and_equip_correctly() {
+        let mut wallet = Wallet::default();
+        for _ in 0..50 {
+            wallet
+                .rewards
+                .finishes
+                .insert(Uuid::new_v4(), MatchReward::Human);
+        }
+        for (id, name, price, rarity) in [
+            ("koi", "Koi Pond", 90, "Rare"),
+            ("circuit", "Arcade Circuit", 125, "Rare"),
+            ("kintsugi", "Kintsugi", 200, "Epic"),
+            ("rift", "Event Horizon", 275, "Epic"),
+        ] {
+            let item = catalog().iter().find(|item| item.id == id).unwrap();
+            assert_eq!(
+                (item.name, item.price, item.rarity),
+                (name, price, Some(rarity))
+            );
+            assert!(!item.trophy);
+            assert!(wallet.apply("starter", id).is_err());
+            let before = wallet.studio().balance;
+            wallet.apply("buy", id).unwrap();
+            wallet.apply("buy", id).unwrap();
+            let studio = wallet.studio();
+            assert_eq!(studio.balance, before - price);
+            assert!(studio.owned.contains(id));
+            assert_eq!(studio.tile, id);
+        }
+        for id in ["serpent", "orrery"] {
+            let item = catalog().iter().find(|item| item.id == id).unwrap();
+            assert_eq!(item.rarity, Some("Legendary"));
+            assert!(item.trophy);
+            assert!(wallet.apply("buy", id).is_err());
+        }
+        assert_eq!(
+            catalog()
+                .iter()
+                .filter(|item| item.rarity.is_some())
+                .count(),
+            6
+        );
+    }
+
+    #[test]
+    fn retiring_rack_finishes_refunds_only_the_recorded_cost_once() {
+        let mut wallet = Wallet::default();
+        for _ in 0..30 {
+            wallet
+                .rewards
+                .finishes
+                .insert(Uuid::new_v4(), MatchReward::Human);
+        }
+        let mut saved = serde_json::to_value(wallet).unwrap();
+        // Actual historic receipts, including a promotional price for Walnut.
+        saved["purchases"] =
+            serde_json::json!({"walnut":21,"rosewood":80,"midnight":65,"cherry":50,"glacier":95});
+        saved["equipment"] =
+            serde_json::json!({"tile":"cherry","rack":"walnut","uniform_board":true});
+        let previous_balance = 600 - 21 - 80 - 65 - 50 - 95;
+        let mut migrated: Wallet = serde_json::from_value(saved).unwrap();
+        assert_eq!(catalog().len(), 18);
+        for retired in [
+            "maple", "walnut", "rosewood", "midnight", "torii", "reactor",
+        ] {
+            assert!(catalog().iter().all(|item| item.id != retired));
+            assert!(!migrated.studio().owned.contains(retired));
+            for action in ["buy", "equip", "starter"] {
+                assert!(migrated.apply(action, retired).is_err());
+            }
+        }
+        let studio = migrated.studio();
+        assert_eq!(studio.balance, previous_balance + 21 + 80 + 65);
+        assert_eq!(studio.tile, "cherry");
+        assert!(studio.owned.contains("glacier"));
+        assert!(studio.uniform_board);
+        let saved = serde_json::to_value(&migrated).unwrap();
+        assert!(saved["equipment"].get("rack").is_none());
+        assert!(saved["purchases"].get("walnut").is_none());
+        assert_eq!(saved["purchases"]["glacier"], 95);
+        let mut reloaded: Wallet = serde_json::from_value(saved).unwrap();
+        reloaded.apply("buy", "koi").unwrap();
+        assert_eq!(reloaded.studio().balance, studio.balance - 90);
+    }
+
+    #[test]
+    fn old_claims_remain_owned_and_new_accounts_earn_every_alternative() {
+        let fresh = Wallet::default();
+        assert_eq!(fresh.studio().owned, BTreeSet::from(["classic".into()]));
+        for id in ["cobalt", "cherry", "lavender"] {
+            assert_eq!(
+                catalog().iter().find(|item| item.id == id).unwrap().price,
+                50
+            );
+            let mut fresh = fresh.clone();
+            assert!(fresh.apply("starter", id).is_err());
+            assert!(fresh.apply("buy", id).is_err());
+            for _ in 0..3 {
+                fresh
+                    .rewards
+                    .finishes
+                    .insert(Uuid::new_v4(), MatchReward::Human);
+            }
+            fresh.apply("buy", id).unwrap();
+            assert_eq!(fresh.studio().balance, 10);
+            assert_eq!(fresh.studio().tile, id);
+            let mut legacy: Wallet =
+                serde_json::from_value(serde_json::json!({"starter":id})).unwrap();
+            assert!(legacy.apply("starter", id).is_err());
+            assert!(legacy.apply("starter", "forest").is_err());
+            legacy.apply("buy", id).unwrap();
+            legacy.apply("equip", id).unwrap();
+            assert!(legacy.purchases.is_empty());
+            let saved: Wallet =
+                serde_json::from_str(&serde_json::to_string(&legacy).unwrap()).unwrap();
+            assert_eq!(
+                saved.studio().owned,
+                BTreeSet::from(["classic".into(), id.into()])
+            );
+            assert_eq!(saved.studio().tile, id);
+        }
+        assert!(
+            serde_json::to_value(fresh)
+                .unwrap()
+                .get("starter")
+                .is_none()
+        );
+    }
+
+    #[test]
     fn daily_credit_is_global_per_utc_date_including_out_of_order_games() {
         let user = Uuid::new_v4();
         let mut game = game_for(user, false);
@@ -481,32 +662,44 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_failed_wallet_write_leaves_equipment_and_free_starter_available_for_retry() {
+    async fn a_failed_purchase_preserves_balance_and_equipment_for_retry() {
         let dir = std::env::temp_dir().join(format!("screwball-wallet-write-{}", Uuid::new_v4()));
         let store = UserStore::load(&dir).await.unwrap();
         let user = store
             .authentik_profile("wallet-outage", "Player")
             .await
             .unwrap();
+        store
+            .edit_wallet(user, |wallet| {
+                for _ in 0..3 {
+                    wallet
+                        .rewards
+                        .finishes
+                        .insert(Uuid::new_v4(), MatchReward::Human);
+                }
+                Ok(())
+            })
+            .await
+            .unwrap();
         let users_dir = dir.join("users");
         let saved = dir.join("moved");
         tokio::fs::rename(&users_dir, &saved).await.unwrap();
         // An unchanged read succeeds even though the storage directory is unavailable.
-        let available = store
-            .edit_wallet(user, |wallet| Ok(wallet.studio().starter_available))
+        let balance = store
+            .edit_wallet(user, |wallet| Ok(wallet.studio().balance))
             .await
             .unwrap();
-        assert!(available);
+        assert_eq!(balance, 60);
         assert!(
             store
-                .edit_wallet(user, |wallet| wallet.apply("starter", "cherry"))
+                .edit_wallet(user, |wallet| wallet.apply("buy", "cherry"))
                 .await
                 .is_err()
         );
         assert_eq!(store.player_names().await.tile_for_user(user), "classic");
         tokio::fs::rename(&saved, &users_dir).await.unwrap();
         store
-            .edit_wallet(user, |wallet| wallet.apply("starter", "cherry"))
+            .edit_wallet(user, |wallet| wallet.apply("buy", "cherry"))
             .await
             .unwrap();
         assert_eq!(store.player_names().await.tile_for_user(user), "cherry");
@@ -514,7 +707,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn purchases_and_one_starter_survive_concurrent_requests_and_restarts() {
+    async fn purchases_survive_concurrent_requests_and_restarts() {
         let dir = std::env::temp_dir().join(format!("screwball-studio-{}", Uuid::new_v4()));
         let users = UserStore::load(&dir).await.unwrap();
         let user = users
@@ -522,9 +715,6 @@ mod tests {
             .await
             .unwrap();
         let buy = |item| users.edit_wallet(user, move |w| w.apply("buy", item));
-        let starter = |item| users.edit_wallet(user, move |w| w.apply("starter", item));
-        let (a, b) = tokio::join!(starter("cobalt"), starter("lavender"));
-        assert_ne!(a.is_ok(), b.is_ok());
         assert!(buy("bingo").await.is_err());
         assert!(buy("aurora").await.is_err());
         assert!(buy("glacier").await.is_err());
@@ -559,7 +749,6 @@ mod tests {
             .studio();
         assert_eq!(state.balance, 0);
         assert_eq!(state.tile, chosen);
-        assert!(!state.starter_available);
         assert!(state.uniform_board);
         assert!(state.owned.contains("aurora"));
         assert!(reloaded.player_names().await.uniform_board(user));

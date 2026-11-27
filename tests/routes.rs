@@ -684,8 +684,19 @@ async fn legacy_squares_stay_classic_and_reclaimed_blanks_change_owner() {
     let app = test_app().await;
     let (host, host_cookie) = app.register("first", "First").await;
     let (guest, guest_cookie) = app.register("second", "Second").await;
-    for (cookie, item) in [(&host_cookie, "cobalt"), (&guest_cookie, "cherry")] {
-        let form = format!("action=starter&item={item}");
+    for (id, cookie, item) in [
+        (host, &host_cookie, "cobalt"),
+        (guest, &guest_cookie, "cherry"),
+    ] {
+        let daily: Vec<_> = (1..=10).map(|day| format!("2025-06-{day:02}")).collect();
+        app.users
+            .update(id, |user| {
+                user.settings.cosmetics =
+                    serde_json::from_value(json!({"rewards": {"daily": daily}})).unwrap();
+            })
+            .await
+            .unwrap();
+        let form = format!("action=buy&item={item}");
         let response = app
             .router()
             .oneshot(post_form("/shop", Some(cookie), &form))

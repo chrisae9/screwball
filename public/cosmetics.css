@@ -1,4 +1,4 @@
-/* A finish is painted inside the tile so it never changes board or rack geometry. */
+/* A finish is painted inside the tile so it never changes tile geometry. */
 [data-tile-style="classic"] {
   --cosmetic-tile-face: linear-gradient(160deg,#fff4d5,#efcf94);
   --cosmetic-tile-edge: #ddbd83;
@@ -61,19 +61,33 @@
   --cosmetic-tile-ink: #fff1c9;
   --cosmetic-tile-detail: inset 0 0 0 1px #f8d58f49, inset 0 -2px #160c19;
 }
-[data-rack-finish="maple"] {
-  --cosmetic-rack-face: repeating-linear-gradient(2deg,#c49962 0 1px,transparent 2px 9px),linear-gradient(#efcf9e,#c69c68);
-  --cosmetic-rack-edge: #936b42;
+[data-tile-style="koi"] {
+  --cosmetic-tile-face: url("finishes/koi-76f824702b.webp") center / cover no-repeat #12464a;
+  --cosmetic-tile-edge: #81c5ad;
+  --cosmetic-tile-ink: #fff4d9;
 }
-[data-rack-finish="walnut"] {
-  --cosmetic-rack-face: repeating-linear-gradient(4deg,transparent 0 3px,#bb8b682a 4px 5px,transparent 6px 11px),linear-gradient(#6e4839,#35251f);
-  --cosmetic-rack-edge: #94644c;
+[data-tile-style="circuit"] {
+  --cosmetic-tile-face: url("finishes/circuit-a89aeb1d15.webp") center / cover no-repeat #201a38;
+  --cosmetic-tile-edge: #af84cc;
+  --cosmetic-tile-ink: #f8f3ff;
 }
-[data-rack-finish="midnight"] {
-  --cosmetic-rack-face: repeating-linear-gradient(135deg,transparent 0 3px,#59657e28 3px 4px),linear-gradient(#303847,#121720);
-  --cosmetic-rack-edge: #818b9d;
+[data-tile-style="kintsugi"] {
+  --cosmetic-tile-face: url("finishes/kintsugi-d8c140d78f.webp") center / cover no-repeat #d4ded8;
+  --cosmetic-tile-edge: #ac884e;
+  --cosmetic-tile-ink: #282e39;
 }
-[data-rack-finish="rosewood"] {
-  --cosmetic-rack-face: repeating-linear-gradient(-3deg,transparent 0 3px,#cc8c713b 4px 5px,transparent 6px 11px),linear-gradient(#9b5351,#552e35);
-  --cosmetic-rack-edge: #aa6761;
+[data-tile-style="rift"] {
+  --cosmetic-tile-face: url("finishes/rift-cefdafeaf5.webp") center / cover no-repeat #29182f;
+  --cosmetic-tile-edge: #d78369;
+  --cosmetic-tile-ink: #fff6e8;
+}
+[data-tile-style="serpent"] {
+  --cosmetic-tile-face: url("finishes/serpent-f889d1b9f0.webp") center / cover no-repeat #193d39;
+  --cosmetic-tile-edge: #95ae79;
+  --cosmetic-tile-ink: #fff6d4;
+}
+[data-tile-style="orrery"] {
+  --cosmetic-tile-face: url("finishes/orrery-ca8d7f7e8f.webp") center / cover no-repeat #192b44;
+  --cosmetic-tile-edge: #b99e69;
+  --cosmetic-tile-ink: #fff2cf;
 }

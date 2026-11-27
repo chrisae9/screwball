@@ -839,7 +839,6 @@ function positionDragGhost(ghost, x, y) {
 
 function Rack({
   tileStyle,
-  rackFinish,
   tiles,
   selected,
   mode,
@@ -1210,7 +1209,7 @@ function Rack({
     };
   });
 
-  return html`<div class="rack" data-rack-finish=${rackFinish} ref=${rackRef}
+  return html`<div class="rack" ref=${rackRef}
     onDragOver=${handleRackDragOver}
     onDragLeave=${handleRackDragLeave}
     onDrop=${handleRackDrop}
@@ -2581,7 +2580,6 @@ function App({ gameId, initial, autoZoom }) {
         !finished
           ? html`<${Rack}
               tileStyle=${game.your_tile_style || "classic"}
-              rackFinish=${game.rack_finish || "maple"}
               tiles=${rack}
               selected=${selected}
               mode=${mode}

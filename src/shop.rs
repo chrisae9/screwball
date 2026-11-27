@@ -9,7 +9,7 @@ use serde::Deserialize;
 
 use crate::{
     app::AppState,
-    cosmetics::{self, Item, ItemKind, Studio},
+    cosmetics::{self, Item, Studio},
     error::AppError,
     render::{asset, escape, layout_with_head},
     session::AuthUser,
@@ -111,7 +111,13 @@ fn sample_word(id: &str) -> &'static str {
         "solar" => "FLARE",
         "aurora" => "SKY",
         "bingo" => "ACE",
-        _ => "RACK",
+        "koi" => "KOI",
+        "circuit" => "BYTE",
+        "kintsugi" => "GILT",
+        "rift" => "RIFT",
+        "serpent" => "FANG",
+        "orrery" => "NOVA",
+        _ => "ACE",
     }
 }
 
@@ -119,24 +125,15 @@ fn tiles(word: &str, finish: &str) -> String {
     word.chars().map(|c| format!(r#"<span class="sample-tile" data-tile-style="{finish}">{c}<small>{}</small></span>"#,crate::models::letter_points(c))).collect()
 }
 
-fn specimen(item: &Item, studio: &Studio) -> String {
-    let rack = item.kind == ItemKind::Rack;
-    let tiles = tiles(
-        sample_word(item.id),
-        if rack { &studio.tile } else { item.id },
-    );
-    let tray = if rack { item.id } else { "" };
+fn specimen(item: &Item) -> String {
+    let letters = tiles(sample_word(item.id), item.id);
     format!(
-        r#"<div class="specimen" aria-hidden="true"><span class="sample-rack" data-rack-finish="{tray}">{tiles}</span></div>"#
+        r#"<div class="specimen" aria-hidden="true"><span class="sample-word">{letters}</span></div>"#
     )
 }
 
-fn equipped(item: &Item, s: &Studio) -> bool {
-    if item.kind == ItemKind::Rack {
-        item.id == s.rack
-    } else {
-        item.id == s.tile
-    }
+fn equipped(item: &Item, studio: &Studio) -> bool {
+    item.id == studio.tile
 }
 
 fn unlock_text(item: &Item, s: &Studio) -> String {
@@ -146,23 +143,25 @@ fn unlock_text(item: &Item, s: &Studio) -> String {
     if s.owned.contains(item.id) {
         return "Owned".into();
     }
-    if item.id == "aurora" {
-        return format!("{}/5 multiplayer finishes", s.human_finishes.min(5));
-    }
-    if item.trophy {
-        return "Play all 7 tiles in one turn".into();
-    }
-    if item.starter && s.starter_available {
-        return "Free starter".into();
+    match item.id {
+        "aurora" => return format!("{}/5 multiplayer finishes", s.human_finishes.min(5)),
+        "serpent" => return format!("Score 75 in a turn · Best {}", s.best_play),
+        "orrery" => return format!("Play on 14 days · {}/14", s.daily_words.min(14)),
+        "bingo" => return "Play all 7 tiles in one turn".into(),
+        _ => {}
     }
     format!("{} coins", item.price)
 }
 
 fn card(item: &Item, s: &Studio, collection: bool) -> String {
+    let rarity = item.rarity.unwrap_or("");
+    let label = item.rarity.map_or(String::new(), |tier| {
+        format!(r#"<span class="finish-rarity">{tier}</span>"#)
+    });
     format!(
-        r#"<a class="shop-card" href="{}">{}<strong>{}</strong><small>{}</small></a>"#,
+        r#"<a class="shop-card" data-rarity="{rarity}" href="{}">{}{label}<strong>{}</strong><small>{}</small></a>"#,
         detail_url(item, collection),
-        specimen(item, s),
+        specimen(item),
         item.name,
         unlock_text(item, s)
     )
@@ -182,18 +181,9 @@ fn earn(s: &Studio) -> String {
     )
 }
 
-// The same materials as the board, shown across ordinary, blank, recently played and draft tiles.
-fn board_preview(item: &Item, s: &Studio) -> String {
-    let style = if item.kind == ItemKind::Tile {
-        item.id
-    } else {
-        &s.tile
-    };
-    let rack = if item.kind == ItemKind::Rack {
-        item.id
-    } else {
-        &s.rack
-    };
+// Show how each finish looks on ordinary tiles, a blank, the last play and a draft.
+fn board_preview(item: &Item) -> String {
+    let style = item.id;
     let mut cells = String::new();
     for i in 0..15 {
         match i {
@@ -209,9 +199,16 @@ fn board_preview(item: &Item, s: &Studio) -> String {
             _ => cells.push_str(r#"<span class="preview-cell"></span>"#),
         }
     }
+    let closeup = if item.rarity.is_some() {
+        format!(
+            r#"<div class="finish-closeup" aria-hidden="true">{}</div>"#,
+            tiles("Q", style)
+        )
+    } else {
+        String::new()
+    };
     format!(
-        r#"<figure class="board-specimen" aria-label="Board and rack preview"><div class="mini-board" aria-hidden="true">{cells}</div><div class="preview-rack sample-rack" data-rack-finish="{rack}" aria-hidden="true">{}</div></figure>"#,
-        tiles("GLAZE", style)
+        r#"<figure class="board-specimen" aria-label="Tile and board preview">{closeup}<div class="mini-board" aria-hidden="true">{cells}</div></figure>"#
     )
 }
 
@@ -221,19 +218,15 @@ fn detail(item: &Item, s: &Studio, collection: bool) -> String {
     } else {
         "/shop"
     };
-    let category = if item.kind == ItemKind::Rack {
-        "Rack finish"
-    } else {
-        "Tile set"
-    };
+    let category = item
+        .rarity
+        .map_or("Tile set".to_owned(), |rarity| format!("{rarity} tile set"));
     let action = if equipped(item, s) {
         r#"<span class="equipped-label">✓ Equipped</span>"#.into()
     } else if s.owned.contains(item.id) {
         form("equip", item.id, collection, "Equip")
     } else if item.trophy {
         format!(r#"<p class="unlock-rule">{}</p>"#, unlock_text(item, s))
-    } else if item.starter && s.starter_available {
-        form("starter", item.id, collection, "Choose free starter")
     } else if s.balance >= item.price {
         form(
             "buy",
@@ -256,7 +249,7 @@ fn detail(item: &Item, s: &Studio, collection: bool) -> String {
             "Tile Shop"
         },
         name = item.name,
-        preview = board_preview(item, s),
+        preview = board_preview(item),
         earn = earn(s)
     )
 }
@@ -264,25 +257,22 @@ fn detail(item: &Item, s: &Studio, collection: bool) -> String {
 fn inventory(s: &Studio, collection: bool) -> String {
     let mut out = String::new();
     if !collection {
-        let feature_id = if s.starter_available {
-            "cobalt"
-        } else {
-            "obsidian"
-        };
-        let feature = find(feature_id).expect("featured finish in catalog");
-        write!(out,r#"<a class="shop-feature" href="{}"><div><small>{}</small><h2>{}</h2><span>{} ›</span></div>{}</a>"#,detail_url(feature,false),
-            if s.starter_available {"Choose your free starter"} else {"Tile preview"},
-            feature.name, if s.starter_available {"Try Cobalt"} else {"View finish"},specimen(feature,s)).unwrap();
+        let feature = find("rift").expect("featured finish in catalog");
+        write!(out, r#"<a class="shop-feature" href="{}"><div><small>Epic tile set</small><h2>{}</h2><span>Preview finish ›</span></div>{}</a>"#, detail_url(feature,false), feature.name, specimen(feature)).unwrap();
     }
-    for (title, kind, trophies) in [
-        ("Tile sets", ItemKind::Tile, false),
-        ("Rack finishes", ItemKind::Rack, false),
-        ("Achievements", ItemKind::Tile, true),
-    ] {
+    out.push_str(&earn(s));
+    for title in ["Rare finds", "Tile sets", "Achievements"] {
         let list: String = cosmetics::catalog()
             .iter()
-            .filter(|i| {
-                i.kind == kind && i.trophy == trophies && (!collection || s.owned.contains(i.id))
+            .filter(|item| {
+                let shelf = if item.rarity.is_some() {
+                    "Rare finds"
+                } else if item.trophy {
+                    "Achievements"
+                } else {
+                    "Tile sets"
+                };
+                shelf == title && (!collection || s.owned.contains(item.id))
             })
             .map(|i| card(i, s, collection))
             .collect();
@@ -296,9 +286,8 @@ fn inventory(s: &Studio, collection: bool) -> String {
         } else {
             ("Off", "on", "Use Classic on board")
         };
-        write!(out,r#"<section class="classic-choice"><div><h2>Classic board</h2><p>{enabled} · Show every board tile in Classic. Your rack keeps its finish.</p></div>{}</section>"#,form("uniform",value,true,action)).unwrap();
+        write!(out,r#"<section class="classic-choice"><div><h2>Classic board</h2><p>{enabled} · Show every board tile in Classic.</p></div>{}</section>"#,form("uniform",value,true,action)).unwrap();
     }
-    out.push_str(&earn(s));
     out
 }
 
