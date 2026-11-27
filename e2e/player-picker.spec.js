@@ -1,4 +1,23 @@
 import { expect, test } from "@playwright/test";
+import { randomUUID } from "node:crypto";
+
+test("creating a game without opponents keeps game options and lets you fill any seat", async ({page}) => {
+  await page.request.post("/auth/register/begin", {data:{username:"Seats " + randomUUID().slice(0, 8)}});
+  await page.goto("/games/new");
+  const seat = page.locator('[name="seat2"]');
+  await seat.selectOption("off");
+  await page.getByText("Game options", {exact:true}).click();
+  await page.getByLabel("John Mode", {exact:true}).check();
+  const create = page.getByRole("button", {name:"Create game"});
+  await create.click();
+  await expect(page).toHaveURL(/\/games\/new$/);
+  await expect(seat).toBeFocused();
+  await expect(page.getByLabel("John Mode", {exact:true})).toBeChecked();
+  expect(await seat.evaluate(el => el.validationMessage)).toBe("Choose at least one opponent.");
+  await page.locator('[name="seat4"]').selectOption("easy");
+  await create.click();
+  await expect(page.getByRole("link", {name:"Back to games"})).toBeVisible();
+});
 
 test("browse beyond the first dozen, refine immediately and choose distinct opponents", async ({ page }) => {
   const players = Array.from({ length: 24 }, (_, i) => ({ id: String(i), name: "Player " + String(i + 1).padStart(2, "0") }));
@@ -33,9 +52,13 @@ test("browse beyond the first dozen, refine immediately and choose distinct oppo
   await expect(panel.getByRole("button", {name:"Player 24", exact:true})).toHaveCount(0);
   await panel.getByRole("button", {name:/@zoefox.*Zoë/}).click();
   await expect(page.locator('[name="seat3"]')).toHaveValue("invite:z");
+  await page.locator(".player-picker summary").filter({hasText:"@zoefox"}).click();
+  await filter.fill("Player 24");
+  await expect(panel.getByRole("status")).toHaveText("No matching players.");
   await page.locator('[name="seat2"]').selectOption("easy");
-  await page.getByText("Change", {exact:true}).click();
-  await expect(panel.getByRole("button", {name:"Player 24", exact:true})).toBeVisible();
+  await expect(filter).toHaveValue("Player 24");
+  await panel.getByRole("button", {name:"Player 24", exact:true}).click();
+  await expect(page.locator('[name="seat3"]')).toHaveValue("invite:23");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
 

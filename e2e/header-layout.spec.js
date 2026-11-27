@@ -59,3 +59,16 @@ for (const width of [320, 390]) {
     });
   }
 }
+
+test("the home rack and sign-in form fit a narrow phone with large text", async ({page}) => {
+  await page.setViewportSize({width:320, height:693});
+  await page.goto("/");
+  await page.evaluate(() => { document.documentElement.style.fontSize = "200%"; });
+  const home = page.getByRole("link", {name:"Scrabble home", exact:true});
+  await expect(home.locator(".brand-tile")).toHaveText(["S1","C3","R1","A1","B3","B3","L1","E1"]);
+  const bounds = await home.boundingBox();
+  expect(bounds.x).toBeGreaterThanOrEqual(0);
+  expect(bounds.x + bounds.width).toBeLessThanOrEqual(320);
+  expect(bounds.height).toBeGreaterThanOrEqual(44);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(320);
+});

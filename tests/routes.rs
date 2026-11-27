@@ -292,7 +292,9 @@ async fn home_page_logged_in_links_to_new_game_page() {
     let response = app.router().oneshot(get("/", Some(&cookie))).await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
     let html = body_string(response).await;
-    assert!(html.contains(r#"aria-label="Scrabble home">Scrabble</a>"#));
+    assert!(html.contains(r#"href="/" aria-label="Scrabble home""#));
+    assert_eq!(html.matches(r#"class="brand-tile""#).count(), 8);
+    assert!(html.contains(r#"<span class="brand-tile">C<small>3</small></span>"#));
     assert!(html.contains("New game"));
     assert!(html.contains("href=\"/games/new\""));
     assert!(html.contains("Sign out"));

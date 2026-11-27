@@ -145,10 +145,22 @@ function playerPicker(label, choose, otherSeats) {
     }
   });
   panel.addEventListener("toggle", () => { if (panel.open) void browse(); });
-  return {panel, reset: () => select(null)};
+  function refreshChoices() {
+    if (panel.open && !input.disabled) render();
+  }
+  return {panel, reset: () => select(null), refreshChoices};
 }
 
 const seats = [...document.querySelectorAll(".new-game-form select[name^=seat]")];
+function validateSeats() {
+  const empty = seats.every(seat => seat.value === "off");
+  for (const seat of seats) {
+    let error = "";
+    if (empty && seat === seats[0]) error = "Choose at least one opponent.";
+    if (seat.value === "invite") error = "Choose a player to invite.";
+    seat.setCustomValidity(error);
+  }
+}
 // Give the directory filters their own form owner while keeping each beside its seat.
 if (seats.length || inviteForm) {
   const searchForm = document.createElement("form");
@@ -162,7 +174,7 @@ for (const seat of seats) {
   const invite = seat.querySelector('option[value="invite"]');
   const picker = playerPicker("Player for seat " + seat.name.slice(4), player => {
     invite.value = player ? "invite:" + player.id : "invite";
-    seat.setCustomValidity(seat.value === "invite" ? "Choose a player to invite." : "");
+    validateSeats();
   }, () => new Set(seats.filter(other => other !== seat && other.value.startsWith("invite:"))
     .map(other => other.value.slice(7))));
   seat.closest("label").after(picker.panel);
@@ -173,6 +185,9 @@ for (const seat of seats) {
     picker.panel.open = enabled;
   }
   seat.addEventListener("change", togglePicker);
+  seat.form.addEventListener("change", event => {
+    if (event.target !== seat && seats.includes(event.target)) picker.refreshChoices();
+  });
   togglePicker();
 }
 

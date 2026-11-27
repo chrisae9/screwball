@@ -79,6 +79,19 @@ enum BackTarget {
     Settings,
 }
 
+fn home_wordmark() -> String {
+    let tiles: String = "SCRABBLE"
+        .chars()
+        .map(|letter| {
+            let points = crate::models::letter_points(letter);
+            format!(r#"<span class="brand-tile">{letter}<small>{points}</small></span>"#)
+        })
+        .collect();
+    format!(
+        r#"<a class="brand" href="/" aria-label="Scrabble home"><span class="brand-rack" aria-hidden="true">{tiles}</span></a>"#
+    )
+}
+
 fn layout_with_back(
     title: &str,
     body: &str,
@@ -136,7 +149,7 @@ fn layout_with_back(
         } else if matches!(parent, BackTarget::Settings) {
             r#"<a class="back-link" href="/settings" aria-label="Back to settings"><span aria-hidden="true">‹</span> Settings</a>"#.to_string()
         } else if title == "Scrabble" {
-            r#"<a class="brand" href="/" aria-label="Scrabble home">Scrabble</a>"#.to_string()
+            home_wordmark()
         } else {
             r#"<a class="back-link" href="/" aria-label="Back to games"><span aria-hidden="true">‹</span> Back</a>"#.to_string()
         },
