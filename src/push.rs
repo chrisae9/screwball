@@ -19,11 +19,10 @@ const LOCAL_DEV_VAPID_PRIVATE_KEY: &str = "GOUXfxqzqhlIXF7mcuoriQnHt7rmodZJQvRK1
 
 #[derive(Clone)]
 pub struct PushService {
-    inner: Option<PushServiceInner>,
+    inner: Option<Arc<PushServiceInner>>,
     pub foreground: Arc<Foreground>,
 }
 
-#[derive(Clone)]
 struct PushServiceInner {
     vapid: PartialVapidSignatureBuilder,
     public_key: String,
@@ -74,12 +73,12 @@ impl PushService {
 
         Ok(Self {
             foreground: Arc::default(),
-            inner: Some(PushServiceInner {
+            inner: Some(Arc::new(PushServiceInner {
                 vapid,
                 public_key,
                 subject: subject.to_string(),
                 client,
-            }),
+            })),
         })
     }
 
