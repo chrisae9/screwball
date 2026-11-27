@@ -167,17 +167,17 @@
   --cosmetic-tile-ink: #fff5df;
 }
 [data-tile-style="vault101"] {
-  --cosmetic-tile-face: url("finishes/vault101-5401c7095c.webp") center / cover no-repeat #164066;
+  --cosmetic-tile-face: url("finishes/vault101-484f80436b.webp") center / cover no-repeat #164066;
   --cosmetic-tile-edge: #daa94f;
   --cosmetic-tile-ink: #fff0be;
 }
 [data-tile-style="pipboy"] {
-  --cosmetic-tile-face: url("finishes/pipboy-9a9479b6c5.webp") center / cover no-repeat #112c20;
+  --cosmetic-tile-face: url("finishes/pipboy-4b19d695ae.webp") center / cover no-repeat #112c20;
   --cosmetic-tile-edge: #87aa6d;
   --cosmetic-tile-ink: #d8ffbd;
 }
 [data-tile-style="nukacola"] {
-  --cosmetic-tile-face: url("finishes/nukacola-911f536dc5.webp") center / cover no-repeat #6f2027;
+  --cosmetic-tile-face: url("finishes/nukacola-1eed340cbf.webp") center / cover no-repeat #6f2027;
   --cosmetic-tile-edge: #d4907e;
   --cosmetic-tile-ink: #ffeed3;
 }
